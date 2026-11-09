@@ -1,5 +1,9 @@
 # Jet CTF (Fighter Jets 3D) ✈️🚩
 
+[![GitHub Pages](https://img.shields.io/badge/Play_Live-GitHub_Pages-00ff9d?style=for-the-badge&logo=github)](https://rishitmanktala.github.io/jet-ctf/)
+
+**🎮 Play Live in Browser**: [https://rishitmanktala.github.io/jet-ctf/](https://rishitmanktala.github.io/jet-ctf/)
+
 A fast-paced, high-fidelity 3D aerial combat and Capture The Flag (CTF) web game powered by **Three.js** and procedural audio synthesis.
 
 ## Features
