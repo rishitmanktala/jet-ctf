@@ -652,7 +652,7 @@
         if (flag.state !== 'CARRIED') {
           for (const ac of aircraftList) {
             if (!ac.alive) continue;
-            // Respect drop pickup cooldown so pressing Space to drop the flag doesn't immediately re-grab it!
+            // Respect drop pickup cooldown so pressing G or X to drop the flag doesn't immediately re-grab it!
             if (ac.flagPickupCooldown > 0 && flag.lastDropper === ac) continue;
 
             const dSq = ac.mesh.position.distanceToSquared(flag.pos);

@@ -34,7 +34,7 @@
       this.boostRegenCooldown = 0;
       this.wasBoosting = false;
       this.ringBoostCooldown = 0;
-      this.flagPickupCooldown = 0; // Cooldown after pressing Space to drop the flag
+      this.flagPickupCooldown = 0; // Cooldown after pressing G or X to drop the flag
 
       // 3D Bullet-Hit Animation State (Flashing Hull, Shield Ripple & Airframe Jolt)
       this.hitFlashTimer = 0;

@@ -1,7 +1,7 @@
 "use strict";
 
   /* ============================================================================
-   * 11. TACTICAL CTF HUD & 2D CANVAS RENDERER (With 20:00 Clock, Space-Drop & Hit Animations)
+   * 11. TACTICAL CTF HUD & 2D CANVAS RENDERER (With 10:00 Clock, Flag-Drop & Hit Animations)
    * ============================================================================
    */
   class HUDRenderer {
@@ -489,12 +489,13 @@
         popY -= 22;
       }
 
-      // 8. Carrying Flag Banner Alert (With [SPACE] TO DROP FLAG Prompt!)
+      // 8. Carrying Flag Banner Alert (With [G] / [X] TO DROP FLAG Prompt!)
       const blink = Math.floor(performance.now() / 200) % 2 === 0;
       if (ac.carryingFlag) {
         ctx.fillStyle = blink ? '#fbbf24' : '#00ff9d';
         ctx.font = isMobile ? 'bold 12px Consolas, monospace' : 'bold 16px Consolas, monospace';
-        ctx.fillText('🚩 CARRYING ENEMY FLAG! FLY HOME TO CAPTURE • PRESS [SPACE] TO DROP FLAG 🚩', cx, isMobile ? 64 : 104);
+        const dropPrompt = isMobile ? 'FLY HOME TO CAPTURE' : 'FLY HOME TO CAPTURE • PRESS [G] OR [X] TO DROP FLAG';
+        ctx.fillText(`🚩 CARRYING ENEMY FLAG! ${dropPrompt} 🚩`, cx, isMobile ? 64 : 104);
       }
 
       const bottomWarnY = isMobile ? (h - 24) : (cy + 150);

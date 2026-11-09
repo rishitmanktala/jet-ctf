@@ -55,7 +55,7 @@
         {
           id: 'CTF',
           title: 'STEP 5/5: CAPTURE THE FLAG (+1,000 PTS)',
-          desc: 'Fly to the enemy base to snatch their flag, then bring it back to your home base to score 1,000 Points! DUAL-FLAG RULE: You can only capture when BOTH flags are at your base. If the enemy takes your flag, shoot down their carrier and return your flag first! First to 3 captures wins.',
+          desc: 'Fly to the enemy base to snatch their flag, then bring it back to your home base to score 1,000 Points! Tap [G] or [X] if you ever need to drop the flag. DUAL-FLAG RULE: You can only capture when BOTH flags are at your base. If the enemy takes your flag, shoot down their carrier and return your flag first! First to 3 captures wins.',
           hint: 'Click "ENGAGE" or press [SPACE] to start!',
           button: 'ENGAGE HOSTILES ▶',
           isComplete: (dt, input, player) => {
