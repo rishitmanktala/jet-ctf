@@ -228,7 +228,7 @@
       if (this.decisionTimer <= 0) {
         const reactMult = Math.max(0.55, 1.0 - this.adrenaline * 0.30);
         this.decisionTimer = this.diff.reactionDelay * reactMult * (0.85 + Math.random() * 0.30);
-        this.evaluateTargetsByPersonality(allAircraft, world, threat, isClutchSituation);
+        this.evaluateTargetsByPersonality(allAircraft, world, threat, isClutchSituation, game);
       }
 
       if (this.maneuverTimer <= 0) {
@@ -597,8 +597,9 @@
 
       // Check if an enemy is in front of the AI's nose -> fire burst!
       if (this.ac.target && this.ac.target.alive && !this.burstCooling) {
+        const isTrainee = (this.ac.target.isPlayer && game && game.tutorial && game.tutorial.active);
         const cowardFleeing = (roleId === 'SHENANIGANS' && (this.situationalState === 'COWARD_FLEE' || this.situationalState === 'HIDE_HEAL'));
-        if (!cowardFleeing) {
+        if (!cowardFleeing && !isTrainee) {
           const lead = WeaponsManager.computeLeadPosition(pos, vel, this.ac.target.mesh.position, this.ac.target.flight.velocity);
           _v3.subVectors(lead.leadPos, pos).normalize();
           const angleToAim = forward.angleTo(_v3);
@@ -628,14 +629,15 @@
       };
     }
 
-    evaluateTargetsByPersonality(allAircraft, world, threat = null, isClutchSituation = false) {
+    evaluateTargetsByPersonality(allAircraft, world, threat = null, isClutchSituation = false, game = null) {
       const pos = this.ac.mesh.position;
       const roleId = this.role.id;
+      const isTutorialActive = Boolean(game && game.tutorial && game.tutorial.active);
 
       // If SHENANIGANS (the sneaky coward), prefer low-risk distracted/damaged targets!
       if (roleId === 'SHENANIGANS') {
         const sneakyVictim = this.findSneakyLowRiskTarget(allAircraft);
-        if (sneakyVictim) {
+        if (sneakyVictim && !(isTutorialActive && sneakyVictim.isPlayer)) {
           this.ac.target = sneakyVictim;
           return;
         }
@@ -646,8 +648,10 @@
           this.ac.lastAttacker && this.ac.lastAttacker.alive &&
           this.ac.lastAttacker.team !== this.ac.team && this.ac.timeSinceDamage < 3.5) {
         if (pos.distanceTo(this.ac.lastAttacker.mesh.position) < 2000) {
-          this.ac.target = this.ac.lastAttacker;
-          return;
+          if (!(isTutorialActive && this.ac.lastAttacker.isPlayer)) {
+            this.ac.target = this.ac.lastAttacker;
+            return;
+          }
         }
       }
 
@@ -656,6 +660,7 @@
       let topEnemyScore = -1;
       for (const other of allAircraft) {
         if (other.alive && other.team !== this.ac.team) {
+          if (isTutorialActive && other.isPlayer) continue;
           if (other.score > topEnemyScore) {
             topEnemyScore = other.score;
             topEnemyScorer = other;
@@ -668,6 +673,8 @@
 
       for (const other of allAircraft) {
         if (!other.alive || other.team === this.ac.team) continue;
+        // Flight School Trainee Immunity: Enemy bots focus on other wingmen while tutorial is active
+        if (isTutorialActive && other.isPlayer) continue;
         const dist = pos.distanceTo(other.mesh.position);
         let priorityDist = dist * (0.85 + Math.random() * 0.20);
 

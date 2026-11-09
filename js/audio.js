@@ -22,6 +22,9 @@
         if (this.ctx && (this.ctx.state === 'suspended' || this.ctx.state === 'interrupted')) {
           this.ctx.resume().catch(() => {});
         }
+        if (this.initialized && !this.musicPlaying && this.musicRequested) {
+          this.startMusic();
+        }
       };
       window.addEventListener('touchend', unlockAudio, { passive: true });
       window.addEventListener('mousedown', unlockAudio, { passive: true });
@@ -117,6 +120,7 @@
     }
 
     startMusic() {
+      this.musicRequested = true;
       if (this.musicPlaying || !this.ctx) return;
       this.musicPlaying = true;
       this.musicStep = 0;
@@ -125,6 +129,7 @@
     }
 
     stopMusic() {
+      this.musicRequested = false;
       this.musicPlaying = false;
       if (this.musicTimer) clearTimeout(this.musicTimer);
     }

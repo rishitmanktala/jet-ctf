@@ -19,7 +19,7 @@
           hint: 'Aim around using your mouse...',
           isComplete: (dt, input, player) => {
             this.stepTimer += dt;
-            return this.stepTimer > 3.5 || (input && input.mouseAimActive && (Math.abs(input.mouseNdcX) > 0.15 || Math.abs(input.mouseNdcY) > 0.15));
+            return this.stepTimer > 4.0 || (input && (input.freeMouseSteer || input.mouseAimActive) && (Math.abs(input.mouseNdcX) > 0.12 || Math.abs(input.mouseNdcY) > 0.12));
           }
         },
         {
@@ -29,7 +29,7 @@
           hint: 'Hold [W] or [SHIFT] to accelerate...',
           isComplete: (dt, input, player) => {
             this.stepTimer += dt;
-            return this.stepTimer > 4.5 || (player && player.flight && player.flight.isBoosting) || (input && input.keys['KeyW'] && this.stepTimer > 1.2);
+            return this.stepTimer > 4.5 || (player && player.flight && player.flight.isBoosting) || (input && input.keys && (input.keys['KeyW'] || input.keys['ArrowUp']) && this.stepTimer > 1.2);
           }
         },
         {
@@ -39,7 +39,7 @@
           hint: 'Tap [A] or [D] to roll...',
           isComplete: (dt, input, player) => {
             this.stepTimer += dt;
-            return this.stepTimer > 4.5 || (input && (input.keys['KeyA'] || input.keys['KeyD']) && this.stepTimer > 1.2);
+            return this.stepTimer > 4.5 || (input && input.keys && (input.keys['KeyA'] || input.keys['KeyD'] || input.keys['KeyS'] || input.keys['ArrowLeft'] || input.keys['ArrowRight']) && this.stepTimer > 1.2);
           }
         },
         {
@@ -49,7 +49,7 @@
           hint: 'Fire your rotary cannon...',
           isComplete: (dt, input, player) => {
             this.stepTimer += dt;
-            return this.stepTimer > 4.5 || (input && (input.mouseButtons.left || input.keys['Space']) && this.stepTimer > 0.8);
+            return this.stepTimer > 4.5 || (input && ((input.mouseButtons && input.mouseButtons.left) || (input.keys && (input.keys['Space'] || input.keys['KeyF']))) && this.stepTimer > 0.8);
           }
         },
         {
@@ -60,7 +60,7 @@
           button: 'ENGAGE HOSTILES ▶',
           isComplete: (dt, input, player) => {
             this.stepTimer += dt;
-            return this.stepTimer > 8.0 || (this.stepTimer > 1.0 && input && input.keys && (input.keys['Space'] || input.keys['Enter']));
+            return this.stepTimer > 12.0 || (this.stepTimer > 1.0 && input && input.keys && (input.keys['Space'] || input.keys['Enter']));
           }
         }
       ];

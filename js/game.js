@@ -147,12 +147,17 @@
       this.cg.init(this);
       this.lastTime = performance.now();
 
-      // Boot cleanly into 3D Hangar showroom
-      this.state = 'MENU';
-      document.getElementById('start-screen').classList.remove('hidden');
-      document.getElementById('top-controls').classList.add('hidden');
-      document.getElementById('touch-controls').classList.add('hidden');
-      this.updateMenuPreviewMesh();
+      if (!this.career.tutorialDone) {
+        // Auto-Launch Maiden Flight Sortie for brand new pilots
+        this.startMatch(true);
+      } else {
+        // Returning pilot: boot cleanly into 3D Hangar showroom
+        this.state = 'MENU';
+        document.getElementById('start-screen').classList.remove('hidden');
+        document.getElementById('top-controls').classList.add('hidden');
+        document.getElementById('touch-controls').classList.add('hidden');
+        this.updateMenuPreviewMesh();
+      }
 
       this.animate();
     }
@@ -993,7 +998,7 @@
       document.getElementById('respawn-hangar-screen').classList.add('hidden');
       if (this.studioVoid) this.studioVoid.visible = false;
       document.getElementById('settings-modal').classList.add('hidden');
-      document.getElementById('top-controls').classList.add('hidden');
+      document.getElementById('top-controls').classList.remove('hidden');
       document.getElementById('touch-controls').classList.toggle('hidden', !this.input.touchUIVisible);
       document.getElementById('feed-container').innerHTML = '';
 
@@ -1089,7 +1094,7 @@
       this.cyclePlayerTarget();
       for (const ac of this.aircraftList) {
         if (!ac.isPlayer && ac.ai) {
-          ac.ai.evaluateTargetsByPersonality(this.aircraftList, this.world);
+          ac.ai.evaluateTargetsByPersonality(this.aircraftList, this.world, null, false, this);
         }
       }
 
