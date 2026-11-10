@@ -9,7 +9,7 @@
       size: 48000,             // LARGER 48KM x 48KM Mega Map!
       softBoundary: 18500,     // Warning distance from origin
       hardBoundary: 21000,     // Autopilot turn-back boundary
-      maxAltitude: 6500,       // High ceiling for towering arches & sky-bridges
+      maxAltitude: 100000,     // Unconstrained ceiling (no altitude limits)
       seaLevel: 0,
       cloudCount: 150,         // Rich high-altitude cloud deck across the 48km map
       lodDistance: 5200,

@@ -156,6 +156,8 @@
         document.getElementById('start-screen').classList.remove('hidden');
         document.getElementById('top-controls').classList.add('hidden');
         document.getElementById('touch-controls').classList.add('hidden');
+        const vjoyInit = document.getElementById('virtual-joystick-container');
+        if (vjoyInit) vjoyInit.classList.add('hidden');
         this.updateMenuPreviewMesh();
       }
 
@@ -998,8 +1000,10 @@
       document.getElementById('respawn-hangar-screen').classList.add('hidden');
       if (this.studioVoid) this.studioVoid.visible = false;
       document.getElementById('settings-modal').classList.add('hidden');
-      document.getElementById('top-controls').classList.remove('hidden');
+      document.getElementById('top-controls').classList.add('hidden');
       document.getElementById('touch-controls').classList.toggle('hidden', !this.input.touchUIVisible);
+      const vjoy = document.getElementById('virtual-joystick-container');
+      if (vjoy) vjoy.classList.toggle('hidden', !this.input.touchUIVisible);
       document.getElementById('feed-container').innerHTML = '';
 
       this.inRespawnWorkshop = false;
@@ -1146,6 +1150,8 @@
 
       document.getElementById('top-controls').classList.add('hidden');
       document.getElementById('touch-controls').classList.add('hidden');
+      const vjoyMenu = document.getElementById('virtual-joystick-container');
+      if (vjoyMenu) vjoyMenu.classList.add('hidden');
       document.getElementById('pause-screen').classList.add('hidden');
       document.getElementById('results-screen').classList.add('hidden');
       document.getElementById('spectate-bar').classList.add('hidden');
@@ -2409,6 +2415,13 @@
               this.remainingMatchSec,
               this.isSuddenDeath
             );
+
+            const dropFlagBtn = document.getElementById('tbtn-drop-flag');
+            if (dropFlagBtn) {
+              const hasFlag = Boolean(this.player && this.player.carryingFlag);
+              dropFlagBtn.classList.toggle('hidden', !hasFlag);
+            }
+
             if (activeFocus.alive) {
               const speedRatio = activeFocus.flight.speed / activeFocus.stats.maxSpeed;
               this.audio.updateEngine(activeFocus.flight.throttle, speedRatio, activeFocus.flight.isBoosting, true);

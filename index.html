@@ -52,42 +52,70 @@
       window.__detectPhone = detectPhone;
       window.__syncViewportSize = syncViewportSize;
 
+      function triggerAutoFullscreen() {
+        var doc = document.documentElement;
+        var fn = doc.requestFullscreen || doc.webkitRequestFullscreen || doc.mozRequestFullScreen || doc.msRequestFullscreen;
+        if (fn && !document.fullscreenElement && !document.webkitFullscreenElement) {
+          fn.call(doc).catch(function() {});
+        }
+        if (screen.orientation && screen.orientation.lock) {
+          screen.orientation.lock('landscape').catch(function() {});
+        }
+      }
+      window.__triggerAutoFullscreen = triggerAutoFullscreen;
+
+      try { triggerAutoFullscreen(); } catch (e) {}
+
       syncViewportSize();
-      window.addEventListener('DOMContentLoaded', syncViewportSize);
-      window.addEventListener('load', syncViewportSize);
+      window.addEventListener('DOMContentLoaded', function() {
+        syncViewportSize();
+        triggerAutoFullscreen();
+      });
+      window.addEventListener('load', function() {
+        syncViewportSize();
+        triggerAutoFullscreen();
+      });
       window.addEventListener('resize', syncViewportSize);
-      window.addEventListener('orientationchange', syncViewportSize);
+      window.addEventListener('orientationchange', function() {
+        syncViewportSize();
+        triggerAutoFullscreen();
+      });
       if (window.visualViewport) {
         window.visualViewport.addEventListener('resize', syncViewportSize);
       }
+
+      var firstGestureEvents = ['touchstart', 'touchend', 'pointerdown', 'mousedown', 'click'];
+      function onFirstUserGesture() {
+        triggerAutoFullscreen();
+      }
+      firstGestureEvents.forEach(function(evt) {
+        window.addEventListener(evt, onFirstUserGesture, { capture: true, passive: true });
+      });
     })();
   </script>
   <canvas id="webgl-canvas"></canvas>
     <canvas id="hud-canvas"></canvas>
 
-    <!-- Top Quick-Access Bar during flight -->
-    <div id="top-controls" class="hidden">
-      <button id="btn-cam" class="hud-mini-btn" title="Shortcut: C">CAM [C]</button>
-      <button id="btn-help-hud" class="hud-mini-btn active desktop-only" title="Shortcut: H (Toggle On-Screen PC Controls Guide)">CONTROLS [H]</button>
-      <button id="btn-touch-ui" class="hud-mini-btn desktop-only" title="Toggle On-Screen Mobile Touch Buttons">TOUCH PAD</button>
-      <button id="btn-mute" class="hud-mini-btn" title="Shortcut: M">AUDIO [M]</button>
-      <button id="btn-hangar" class="hud-mini-btn" title="Return to 3D Hangar showroom">HANGAR</button>
-      <button id="btn-pause" class="hud-mini-btn" title="Shortcut: Tab or P">SCORE [TAB]</button>
+    <!-- Top Quick-Access Bar during flight (removed per user request) -->
+    <div id="top-controls" class="hidden" style="display:none !important;"></div>
+
+    <!-- Mobile & Tablet Virtual Dynamic Flight Joystick -->
+    <div id="virtual-joystick-container" class="hidden">
+      <div id="vjoy-base" class="vjoy-base idle">
+        <div id="vjoy-ring"></div>
+        <div id="vjoy-knob"></div>
+      </div>
+      <div id="vjoy-hint">🕹️ FLIGHT STICK</div>
     </div>
 
-    <!-- Mobile & Tablet On-Screen Touch Flight Controls -->
+    <!-- Mobile & Tablet Streamlined Touch Flight Controls -->
     <div id="touch-controls" class="hidden">
-      <div id="touch-steer-hint" class="hidden">DRAG SKY TO STEER FIGHTER</div>
-      <div class="touch-cluster-left">
-        <button id="tbtn-spd-up" class="touch-btn">SPD +<span>THROTTLE W</span></button>
-        <button id="tbtn-spd-dn" class="touch-btn">SPD -<span>BRAKE S</span></button>
-        <button id="tbtn-roll-l" class="touch-btn">⟲ ROLL L<span>BANK A</span></button>
-        <button id="tbtn-roll-r" class="touch-btn">ROLL R ⟳<span>BANK D</span></button>
-      </div>
+      <button id="tbtn-pause" class="touch-pause-btn" title="Pause Game">⏸</button>
       <div class="touch-cluster-right">
-        <button id="tbtn-gun" class="touch-btn touch-btn-gun">FIRE CANNON<span>UNLIMITED BULLETS</span></button>
-        <button id="tbtn-boost" class="touch-btn touch-btn-boost">BOOST<span>SHIFT NITRO</span></button>
-        <button id="tbtn-target" class="touch-btn">TARGET<span>CYCLE [R]</span></button>
+        <button id="tbtn-target" class="touch-btn touch-btn-target" title="Cycle Target">🎯<span>TARGET</span></button>
+        <button id="tbtn-drop-flag" class="touch-btn touch-btn-drop hidden" title="Drop Stolen Flag">🏳️<span>DROP FLAG</span></button>
+        <button id="tbtn-brake" class="touch-btn touch-btn-brake" title="Airbrake / High-G Turn">⟲<span>BRAKE</span></button>
+        <button id="tbtn-boost" class="touch-btn touch-btn-boost" title="Nitro Afterburner">🔥<span>BOOST</span></button>
       </div>
     </div>
 

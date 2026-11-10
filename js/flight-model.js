@@ -34,13 +34,18 @@
       // 1. Update throttle via W and S keys (0.0 to 1.0)
       if (controls.throttleDelta !== 0) {
         this.throttle = Math.max(0.0, Math.min(1.0, this.throttle + controls.throttleDelta * 0.70 * dt));
+      } else if (aircraft && aircraft.isPlayer && controls.isTouchDevice) {
+        // Mobile auto-cruise: maintain full combat speed automatically so no constant throttle holding is required
+        if (this.throttle < 0.96) {
+          this.throttle += (1.0 - this.throttle) * Math.min(1.0, 2.0 * dt);
+        }
       }
 
-      // 2. World Boundary Protection & Auto Turn-Back
+      // 2. World Boundary Protection & Auto Turn-Back (No altitude limits!)
       const pos = mesh.position;
       const horizDist = Math.sqrt(pos.x * pos.x + pos.z * pos.z);
-      this.outOfBoundsWarning = horizDist > CONFIG.WORLD.softBoundary || pos.y > CONFIG.WORLD.maxAltitude;
-      this.autopilotOverride = horizDist > CONFIG.WORLD.hardBoundary || pos.y > CONFIG.WORLD.maxAltitude + 400;
+      this.outOfBoundsWarning = horizDist > CONFIG.WORLD.softBoundary;
+      this.autopilotOverride = horizDist > CONFIG.WORLD.hardBoundary;
 
       // 3. Stall Check
       if (this.speed < phys.stallSpeed && !this.isBoosting) {
@@ -128,7 +133,7 @@
           // AI Bot or Autopilot Override Steering
           let targetDir = controls.mouseAimWorldDir;
           if (this.autopilotOverride) {
-            targetDir = _v1.set(-pos.x, 700 - pos.y, -pos.z).normalize();
+            targetDir = _v1.set(-pos.x, 0, -pos.z).normalize();
           }
 
           const targetHeading = Math.atan2(-targetDir.x, -targetDir.z);
@@ -182,7 +187,7 @@
         let yawIn = controls.yaw;
 
         if (this.autopilotOverride) {
-          _v1.set(-pos.x, 900 - pos.y, -pos.z).normalize();
+          _v1.set(-pos.x, 0, -pos.z).normalize();
           _q1.copy(mesh.quaternion).invert();
           _v2.copy(_v1).applyQuaternion(_q1);
           rollIn = Math.max(-1, Math.min(1, Math.atan2(_v2.x, _v2.y) * 2.2));

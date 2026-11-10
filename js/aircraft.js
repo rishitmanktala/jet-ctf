@@ -359,7 +359,7 @@
         }
       }
 
-      if (controls.fireCannon) {
+      if (controls.fireCannon && !this.isTakingOff) {
         const jitter = this.isPlayer ? 0.0018 : (this.ai ? this.ai.diff.aimErrorRad * 0.45 : 0.016);
         weapons.fireCannon(this, aimOverride, jitter);
       }

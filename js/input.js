@@ -18,13 +18,33 @@
       this.freeMouseSteer = true;
       this.mouseButtons = { left: false, right: false };
 
-      this.isTouchDevice = Boolean(window.__detectPhone ? window.__detectPhone() : false);
+      this.isTouchDevice = Boolean(
+        (window.__detectPhone && window.__detectPhone()) ||
+        ('ontouchstart' in window) ||
+        (navigator.maxTouchPoints && navigator.maxTouchPoints > 0)
+      );
       this.touchUIVisible = this.isTouchDevice;
       this.showPcControlsGuide = true;
       this.steerTouchId = null;
+      this.anyTouchActive = false;
+
+      // Virtual Dynamic Flight Joystick (Touch / Phone)
+      this.joystick = {
+        active: false,
+        touchId: null,
+        baseX: 88,
+        baseY: 0,
+        knobX: 88,
+        knobY: 0,
+        normX: 0,
+        normY: 0,
+        maxRadius: 55
+      };
+
       this.touchHold = {
         spdUp: false,
         spdDn: false,
+        brake: false,
         rollL: false,
         rollR: false,
         gun: false,
@@ -97,17 +117,33 @@
       webglCanvas.addEventListener('touchstart', (e) => {
         e.preventDefault();
         if (this.audio) this.audio.init();
-        if (!this.touchUIVisible) {
-          this.touchUIVisible = true;
-          const tc = document.getElementById('touch-controls');
-          if (tc) tc.classList.remove('hidden');
-        }
+        if (window.__triggerAutoFullscreen) window.__triggerAutoFullscreen();
+
+        this.isTouchDevice = true;
+        this.touchUIVisible = true;
+        this.anyTouchActive = true;
+
+        const vjoyContainer = document.getElementById('virtual-joystick-container');
+        if (vjoyContainer) vjoyContainer.classList.remove('hidden');
+        const tc = document.getElementById('touch-controls');
+        if (tc) tc.classList.remove('hidden');
+
         for (let i = 0; i < e.changedTouches.length; i++) {
           const t = e.changedTouches[i];
-          if (this.steerTouchId === null) {
+          // Left 60% of screen claims the virtual flight stick
+          if (t.clientX < window.innerWidth * 0.60 && this.joystick.touchId === null) {
+            this.joystick.touchId = t.identifier;
+            this.joystick.active = true;
+            this.joystick.baseX = t.clientX;
+            this.joystick.baseY = t.clientY;
+            this.joystick.knobX = t.clientX;
+            this.joystick.knobY = t.clientY;
+            this.joystick.normX = 0;
+            this.joystick.normY = 0;
+            this.updateJoystickUI();
+          } else if (this.steerTouchId === null) {
             this.steerTouchId = t.identifier;
             updatePointerCoords(t.clientX, t.clientY);
-            break;
           }
         }
       }, { passive: false });
@@ -116,27 +152,80 @@
         e.preventDefault();
         for (let i = 0; i < e.changedTouches.length; i++) {
           const t = e.changedTouches[i];
-          if (t.identifier === this.steerTouchId) {
+          if (t.identifier === this.joystick.touchId) {
+            let dx = t.clientX - this.joystick.baseX;
+            let dy = t.clientY - this.joystick.baseY;
+            const dist = Math.hypot(dx, dy);
+            const maxR = this.joystick.maxRadius;
+            if (dist > maxR) {
+              const clampedX = (dx / dist) * maxR;
+              const clampedY = (dy / dist) * maxR;
+              // Smooth dynamic base dragging so thumb never slips off stick
+              this.joystick.baseX = t.clientX - clampedX;
+              this.joystick.baseY = t.clientY - clampedY;
+              dx = clampedX;
+              dy = clampedY;
+            }
+            this.joystick.normX = dx / maxR;
+            this.joystick.normY = dy / maxR;
+            this.joystick.knobX = this.joystick.baseX + dx;
+            this.joystick.knobY = this.joystick.baseY + dy;
+            this.updateJoystickUI();
+          } else if (t.identifier === this.steerTouchId) {
             updatePointerCoords(t.clientX, t.clientY);
-            break;
           }
         }
       }, { passive: false });
 
-      const endSteerTouch = (e) => {
+      const endTouch = (e) => {
         for (let i = 0; i < e.changedTouches.length; i++) {
           const t = e.changedTouches[i];
+          if (t.identifier === this.joystick.touchId) {
+            this.joystick.active = false;
+            this.joystick.touchId = null;
+            this.joystick.normX = 0;
+            this.joystick.normY = 0;
+            this.resetJoystickUI();
+          }
           if (t.identifier === this.steerTouchId) {
             this.steerTouchId = null;
-            break;
           }
         }
+        if (e.touches.length === 0) {
+          this.anyTouchActive = false;
+        }
       };
-      webglCanvas.addEventListener('touchend', endSteerTouch, { passive: false });
-      webglCanvas.addEventListener('touchcancel', endSteerTouch, { passive: false });
+      webglCanvas.addEventListener('touchend', endTouch, { passive: false });
+      webglCanvas.addEventListener('touchcancel', endTouch, { passive: false });
 
       window.addEventListener('contextmenu', (e) => e.preventDefault());
       this.bindTouchButtons();
+    }
+
+    updateJoystickUI() {
+      const baseEl = document.getElementById('vjoy-base');
+      const knobEl = document.getElementById('vjoy-knob');
+      if (baseEl && knobEl) {
+        baseEl.classList.remove('idle');
+        baseEl.style.left = `${this.joystick.baseX}px`;
+        baseEl.style.top = `${this.joystick.baseY}px`;
+        baseEl.style.bottom = 'auto';
+        const kx = (this.joystick.knobX - this.joystick.baseX);
+        const ky = (this.joystick.knobY - this.joystick.baseY);
+        knobEl.style.transform = `translate(${kx}px, ${ky}px)`;
+      }
+    }
+
+    resetJoystickUI() {
+      const baseEl = document.getElementById('vjoy-base');
+      const knobEl = document.getElementById('vjoy-knob');
+      if (baseEl && knobEl) {
+        baseEl.classList.add('idle');
+        baseEl.style.left = '88px';
+        baseEl.style.top = 'auto';
+        baseEl.style.bottom = '88px';
+        knobEl.style.transform = 'translate(0px, 0px)';
+      }
     }
 
     bindTouchButtons() {
@@ -164,12 +253,8 @@
         el.addEventListener('mouseleave', end);
       };
 
-      bindHold('tbtn-spd-up', 'spdUp');
-      bindHold('tbtn-spd-dn', 'spdDn');
-      bindHold('tbtn-roll-l', 'rollL');
-      bindHold('tbtn-roll-r', 'rollR');
-      bindHold('tbtn-gun', 'gun');
       bindHold('tbtn-boost', 'boost');
+      bindHold('tbtn-brake', 'brake');
 
       const bindTap = (id, code) => {
         const el = document.getElementById(id);
@@ -187,6 +272,21 @@
       };
 
       bindTap('tbtn-target', 'KeyR');
+      bindTap('tbtn-drop-flag', 'TouchDropFlag');
+
+      const pauseBtn = document.getElementById('tbtn-pause');
+      if (pauseBtn) {
+        const toggleP = (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          if (this.audio) this.audio.init();
+          if (window.airCombatSim) {
+            window.airCombatSim.setPaused(window.airCombatSim.state !== 'PAUSED');
+          }
+        };
+        pauseBtn.addEventListener('touchstart', toggleP, { passive: false });
+        pauseBtn.addEventListener('mousedown', toggleP);
+      }
     }
 
     consumePressed(code) {
@@ -235,8 +335,8 @@
       if (this.keys['ArrowRight']) yaw += 1;
       if (this.keys['ArrowLeft']) yaw -= 1;
 
-      // Direct Mouse Steering & Rate Control with Zero Level-Flight Snapping:
-      const shouldFollowPointer = !this.isTouchDevice || (this.steerTouchId !== null);
+      // Direct Mouse Steering or Virtual Joystick:
+      const shouldFollowPointer = !this.isTouchDevice || (this.steerTouchId !== null) || this.joystick.active;
       if (shouldFollowPointer && playerAc) {
         mouseAimActive = true;
         const curEl = playerAc.flight ? playerAc.flight.elevation : 0;
@@ -251,35 +351,47 @@
 
       // W and S control throttle & airbrake
       if (this.keys['KeyW'] || this.touchHold.spdUp) throttleDelta += 1;
-      if (this.keys['KeyS'] || this.touchHold.spdDn) throttleDelta -= 1;
+      if (this.keys['KeyS'] || this.touchHold.spdDn || this.touchHold.brake) throttleDelta -= 1;
 
       // Shift activates regenerating Boost
       boost = Boolean(this.keys['ShiftLeft'] || this.keys['ShiftRight'] || this.touchHold.boost);
 
-      // Left-Click or Space (or F / Touch Gun button) fires rotary cannon!
-      fireCannon = Boolean(
-        (!this.isTouchDevice && this.mouseButtons.left) ||
-        this.keys['Space'] ||
-        this.keys['KeyF'] ||
-        this.touchHold.gun
-      );
+      // Continuous 24/7 cannon fire on mobile while holding screen / joystick to fly:
+      if (this.isTouchDevice) {
+        if (this.joystick.active || this.anyTouchActive || this.steerTouchId !== null || this.touchHold.gun) {
+          fireCannon = true;
+        }
+      } else {
+        fireCannon = Boolean(
+          this.mouseButtons.left ||
+          this.keys['Space'] ||
+          this.keys['KeyF'] ||
+          this.touchHold.gun
+        );
+      }
 
-      // G or X key drops the carried flag!
-      const dropFlag = this.consumePressed('KeyG') || this.consumePressed('KeyX');
+      // Drop flag: G, X, or mobile Drop Flag button
+      const dropFlag = this.consumePressed('KeyG') || this.consumePressed('KeyX') || this.consumePressed('TouchDropFlag');
 
       cycleTarget = this.consumePressed('KeyR');
       toggleCam = this.consumePressed('KeyC');
 
       const invertY = Boolean(playerAc && playerAc.stats && playerAc.stats.invertY);
-      const rawSteerY = this.mouseY; // mouseY < 0 when cursor moved UP
-      const steerY = invertY ? rawSteerY : -rawSteerY; // positive when pulling UP (climb)
+      let steerX = this.mouseX;
+      let steerY = invertY ? this.mouseY : -this.mouseY;
+
+      if (this.isTouchDevice && this.joystick.active) {
+        steerX = this.joystick.normX;
+        // In flight controls, pulling DOWN on stick (normY > 0) climbs (+steerY). Pushing UP dives (-steerY).
+        steerY = invertY ? -this.joystick.normY : this.joystick.normY;
+      }
 
       return {
         pitch: Math.max(-1, Math.min(1, pitch)),
         roll: Math.max(-1, Math.min(1, roll)),
         yaw: Math.max(-1, Math.min(1, yaw)),
-        steerX: this.mouseX,
-        steerY: steerY,
+        steerX,
+        steerY,
         throttleDelta,
         boost,
         fireCannon,
@@ -287,7 +399,8 @@
         cycleTarget,
         toggleCam,
         mouseAimActive,
-        mouseAimWorldDir
+        mouseAimWorldDir,
+        isTouchDevice: this.isTouchDevice
       };
     }
   }
