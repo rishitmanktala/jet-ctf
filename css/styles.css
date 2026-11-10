@@ -1202,8 +1202,8 @@
       top: 64px;
       left: 50%;
       transform: translateX(-50%);
-      width: 420px;
-      max-width: calc(100vw - 720px);
+      width: 440px;
+      max-width: min(440px, 92vw);
       display: flex;
       flex-direction: column;
       align-items: center;
@@ -1354,7 +1354,7 @@
       top: 64px;
       bottom: 70px;
       width: 320px;
-      max-width: 25vw;
+      max-width: 340px;
       background: rgba(4, 10, 22, 0.82);
       border: 1px solid rgba(56, 189, 248, 0.22);
       border-radius: var(--radius-lg);
@@ -1861,4 +1861,122 @@
       font-size: 12px;
       color: #94a3b8;
       line-height: 1.5;
+    }
+
+    /* ============================================================
+       MOBILE LANDSCAPE & COMPACT HANGAR VIEWPORT OPTIMIZATION
+    ============================================================ */
+    @media (max-width: 1024px), (max-height: 540px) {
+      .hangar-hud-header {
+        height: 44px;
+        padding: 0 10px;
+      }
+      .hangar-brand {
+        display: none;
+      }
+      .pilot-profile-badge {
+        padding: 2px 7px;
+        gap: 5px;
+      }
+      .rank-icon-large {
+        font-size: 13px;
+      }
+      .rank-name-label {
+        font-size: 8.5px;
+      }
+      .xp-bar-container {
+        width: 60px;
+        height: 4px;
+      }
+      .credits-chip {
+        padding: 2px 7px;
+        font-size: 10.5px;
+      }
+      .hangar-nav-tabs {
+        padding: 2px;
+        gap: 2px;
+      }
+      .hangar-tab-btn, .respawn-tab-btn {
+        padding: 4px 8px;
+        font-size: 8.5px;
+        letter-spacing: 0.03em;
+      }
+      .hud-mini-btn {
+        padding: 4px 8px;
+        font-size: 8.5px;
+      }
+
+      .hangar-center-carousel {
+        top: 48px;
+        width: 92vw;
+        max-width: 440px;
+        gap: 4px;
+      }
+      .workshop-carousel-bar {
+        padding: 4px 10px;
+        gap: 8px;
+      }
+      .carousel-nav-btn {
+        padding: 4px 8px;
+        font-size: 9.5px;
+      }
+      .carousel-jet-counter {
+        font-size: 8px;
+      }
+      .carousel-jet-name {
+        font-size: 12.5px;
+      }
+      .carousel-jet-role {
+        font-size: 8px;
+      }
+      .jet-pill {
+        font-size: 8px;
+        padding: 2px 6px;
+      }
+
+      .hangar-wing {
+        top: 48px;
+        bottom: 8px;
+        width: min(330px, 46vw);
+        max-width: 350px;
+        padding: 8px 10px;
+        z-index: 20;
+      }
+      .hangar-wing-left {
+        left: 8px;
+      }
+      .hangar-wing-right {
+        right: 8px;
+      }
+
+      /* In mobile landscape, side wings only show when their corresponding tab is active */
+      .hangar-screen:not(.tab-upgrades-active):not(.tab-pilot-active) .hangar-wing-left {
+        display: none !important;
+      }
+      .hangar-screen:not(.tab-paint-active):not(.tab-pilot-active) .hangar-wing-right {
+        display: none !important;
+      }
+
+      /* Respawn workshop mobile tabs */
+      #respawn-hangar-screen:not(.tab-upgrades-active) #respawn-wing-left {
+        display: none !important;
+      }
+      #respawn-hangar-screen:not(.tab-paint-active) #respawn-wing-right {
+        display: none !important;
+      }
+
+      .hangar-bottom-dock {
+        bottom: 6px;
+        gap: 2px;
+      }
+      .hangar-launch-btn {
+        font-size: 11px !important;
+        padding: 6px 20px !important;
+      }
+      .hangar-launch-subtitle {
+        display: none;
+      }
+      .hangar-orbit-hint {
+        display: none;
+      }
     }

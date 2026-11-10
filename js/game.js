@@ -153,7 +153,14 @@
       } else {
         // Returning pilot: boot cleanly into 3D Hangar showroom
         this.state = 'MENU';
-        document.getElementById('start-screen').classList.remove('hidden');
+        const startScreen = document.getElementById('start-screen');
+        if (startScreen) {
+          startScreen.classList.remove('hidden', 'tab-upgrades-active', 'tab-paint-active', 'tab-pilot-active');
+          startScreen.classList.add('tab-fighter-active');
+        }
+        document.querySelectorAll('.hangar-tab-btn').forEach(b => {
+          b.classList.toggle('active', b.dataset.tab === 'fighter');
+        });
         document.getElementById('top-controls').classList.add('hidden');
         document.getElementById('touch-controls').classList.add('hidden');
         const vjoyInit = document.getElementById('virtual-joystick-container');
@@ -679,7 +686,8 @@
     }
 
     bindUIEvents() {
-      // Hangar Tab Switching (Workshop vs Pilot Info)
+      // Main Hangar Tab Switching (Fighter / Upgrades / Paint / Pilot)
+      const startScreen = document.getElementById('start-screen');
       document.querySelectorAll('.hangar-tab-btn').forEach(btn => {
         btn.addEventListener('click', () => {
           document.querySelectorAll('.hangar-tab-btn').forEach(b => b.classList.remove('active'));
@@ -691,13 +699,40 @@
           const wingRightWorkshop = document.getElementById('wing-right-workshop');
           const wingRightPilot = document.getElementById('wing-right-pilot');
 
-          if (wingLeftWorkshop) wingLeftWorkshop.classList.toggle('hidden', target !== 'workshop');
-          if (wingLeftPilot) wingLeftPilot.classList.toggle('hidden', target !== 'pilot');
-          if (wingRightWorkshop) wingRightWorkshop.classList.toggle('hidden', target !== 'workshop');
-          if (wingRightPilot) wingRightPilot.classList.toggle('hidden', target !== 'pilot');
+          if (startScreen) {
+            startScreen.classList.remove('tab-fighter-active', 'tab-upgrades-active', 'tab-paint-active', 'tab-pilot-active');
+            startScreen.classList.add(`tab-${target}-active`);
+          }
 
-          if (target === 'workshop') this.renderWorkshopUI();
-          if (target === 'pilot') this.renderPilotStats();
+          if (target === 'pilot') {
+            if (wingLeftWorkshop) wingLeftWorkshop.classList.add('hidden');
+            if (wingLeftPilot) wingLeftPilot.classList.remove('hidden');
+            if (wingRightWorkshop) wingRightWorkshop.classList.add('hidden');
+            if (wingRightPilot) wingRightPilot.classList.remove('hidden');
+            this.renderPilotStats();
+          } else {
+            if (wingLeftPilot) wingLeftPilot.classList.add('hidden');
+            if (wingRightPilot) wingRightPilot.classList.add('hidden');
+            if (wingLeftWorkshop) wingLeftWorkshop.classList.remove('hidden');
+            if (wingRightWorkshop) wingRightWorkshop.classList.remove('hidden');
+            this.renderWorkshopUI();
+          }
+        });
+      });
+
+      // Mid-Match Respawn Workshop Tab Switching (Fighter / Upgrades / Paint)
+      const respawnScreen = document.getElementById('respawn-hangar-screen');
+      document.querySelectorAll('.respawn-tab-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          document.querySelectorAll('.respawn-tab-btn').forEach(b => b.classList.remove('active'));
+          btn.classList.add('active');
+          const target = btn.dataset.tab;
+
+          if (respawnScreen) {
+            respawnScreen.classList.remove('tab-fighter-active', 'tab-upgrades-active', 'tab-paint-active');
+            respawnScreen.classList.add(`tab-${target}-active`);
+          }
+          this.renderRespawnWorkshopUI();
         });
       });
 
@@ -734,8 +769,10 @@
       });
 
       // Squadron selection
-      document.getElementById('opt-team-blue').addEventListener('click', () => this.selectTeam('BLUE'));
-      document.getElementById('opt-team-red').addEventListener('click', () => this.selectTeam('RED'));
+      const btnBlue = document.getElementById('opt-team-blue');
+      if (btnBlue) btnBlue.addEventListener('click', () => this.selectTeam('BLUE'));
+      const btnRed = document.getElementById('opt-team-red');
+      if (btnRed) btnRed.addEventListener('click', () => this.selectTeam('RED'));
 
       // Callsign Input
       const callsignInput = document.getElementById('input-callsign');
@@ -846,15 +883,19 @@
       }
 
       // HUD Mini-Buttons
-      document.getElementById('btn-cam').addEventListener('click', () => this.toggleCamera());
+      const btnCam = document.getElementById('btn-cam');
+      if (btnCam) btnCam.addEventListener('click', () => this.toggleCamera());
       const btnTouchUI = document.getElementById('btn-touch-ui');
-      const syncTouchUI = (show) => {
-        this.input.touchUIVisible = show;
-        btnTouchUI.classList.toggle('active', show);
-        document.getElementById('touch-controls').classList.toggle('hidden', !show || this.state !== 'PLAYING');
-      };
-      btnTouchUI.addEventListener('click', () => syncTouchUI(!this.input.touchUIVisible));
-      btnTouchUI.classList.toggle('active', this.input.touchUIVisible);
+      if (btnTouchUI) {
+        const syncTouchUI = (show) => {
+          this.input.touchUIVisible = show;
+          btnTouchUI.classList.toggle('active', show);
+          const touchEl = document.getElementById('touch-controls');
+          if (touchEl) touchEl.classList.toggle('hidden', !show || this.state !== 'PLAYING');
+        };
+        btnTouchUI.addEventListener('click', () => syncTouchUI(!this.input.touchUIVisible));
+        btnTouchUI.classList.toggle('active', this.input.touchUIVisible);
+      }
 
       const helpBtn = document.getElementById('btn-help-hud');
       if (helpBtn) {
@@ -863,16 +904,21 @@
           helpBtn.classList.toggle('active', this.input.showPcControlsGuide);
         });
       }
-      document.getElementById('btn-mute').addEventListener('click', () => this.toggleMute());
+      const btnMute = document.getElementById('btn-mute');
+      if (btnMute) btnMute.addEventListener('click', () => this.toggleMute());
       const btnHangar = document.getElementById('btn-hangar');
       if (btnHangar) btnHangar.addEventListener('click', () => this.returnToMenu());
-      document.getElementById('btn-pause').addEventListener('click', () => this.setPaused(this.state !== 'PAUSED'));
+      const btnPause = document.getElementById('btn-pause');
+      if (btnPause) btnPause.addEventListener('click', () => this.setPaused(this.state !== 'PAUSED'));
 
-      document.getElementById('btn-launch').addEventListener('click', () => {
-        this.audio.init();
-        this.startMatch();
-        this.handleResize();
-      });
+      const btnLaunch = document.getElementById('btn-launch');
+      if (btnLaunch) {
+        btnLaunch.addEventListener('click', () => {
+          this.audio.init();
+          this.startMatch();
+          this.handleResize();
+        });
+      }
 
       document.addEventListener('click', (e) => {
         const b = e.target && e.target.closest ? e.target.closest('button') : null;
@@ -883,19 +929,29 @@
       window.addEventListener('webkitfullscreenchange', () => this.handleResize());
       window.addEventListener('orientationchange', () => this.handleResize());
 
-      document.getElementById('btn-resume').addEventListener('click', () => this.setPaused(false));
-      document.getElementById('btn-restart').addEventListener('click', () => this.startMatch());
-      document.getElementById('btn-return-menu').addEventListener('click', () => this.returnToMenu());
-      document.getElementById('btn-play-again').addEventListener('click', () => this.startMatch());
-      document.getElementById('btn-results-menu').addEventListener('click', () => this.returnToMenu());
+      const btnResume = document.getElementById('btn-resume');
+      if (btnResume) btnResume.addEventListener('click', () => this.setPaused(false));
+      const btnRestart = document.getElementById('btn-restart');
+      if (btnRestart) btnRestart.addEventListener('click', () => this.startMatch());
+      const btnReturnMenu = document.getElementById('btn-return-menu');
+      if (btnReturnMenu) btnReturnMenu.addEventListener('click', () => this.returnToMenu());
+      const btnPlayAgain = document.getElementById('btn-play-again');
+      if (btnPlayAgain) btnPlayAgain.addEventListener('click', () => this.startMatch());
+      const btnResultsMenu = document.getElementById('btn-results-menu');
+      if (btnResultsMenu) btnResultsMenu.addEventListener('click', () => this.returnToMenu());
 
-      document.getElementById('btn-spec-next').addEventListener('click', () => this.cycleSpectateTarget());
+      const btnSpecNext = document.getElementById('btn-spec-next');
+      if (btnSpecNext) btnSpecNext.addEventListener('click', () => this.cycleSpectateTarget());
       const btnSpecPlane = document.getElementById('btn-spec-plane');
       if (btnSpecPlane) btnSpecPlane.addEventListener('click', () => this.openRespawnWorkshop());
-      document.getElementById('btn-spec-respawn').addEventListener('click', () => {
-        this.deployPlayerFromRespawn();
-      });
-      document.getElementById('btn-spec-end').addEventListener('click', () => this.returnToMenu());
+      const btnSpecRespawn = document.getElementById('btn-spec-respawn');
+      if (btnSpecRespawn) {
+        btnSpecRespawn.addEventListener('click', () => {
+          this.deployPlayerFromRespawn();
+        });
+      }
+      const btnSpecEnd = document.getElementById('btn-spec-end');
+      if (btnSpecEnd) btnSpecEnd.addEventListener('click', () => this.returnToMenu());
 
       // Center Respawn Overlay Buttons
       const btnCenterChangePlane = document.getElementById('btn-center-change-plane');
@@ -1159,7 +1215,14 @@
       document.getElementById('respawn-hangar-screen').classList.add('hidden');
       if (this.studioVoid) this.studioVoid.visible = false;
       document.getElementById('settings-modal').classList.add('hidden');
-      document.getElementById('start-screen').classList.remove('hidden');
+      const startScreen = document.getElementById('start-screen');
+      if (startScreen) {
+        startScreen.classList.remove('hidden', 'tab-upgrades-active', 'tab-paint-active', 'tab-pilot-active');
+        startScreen.classList.add('tab-fighter-active');
+      }
+      document.querySelectorAll('.hangar-tab-btn').forEach(b => {
+        b.classList.toggle('active', b.dataset.tab === 'fighter');
+      });
 
       this.inRespawnWorkshop = false;
       this.respawnAwaitingDeploy = false;
@@ -1170,18 +1233,23 @@
 
     toggleCamera() {
       this.cameraMode = this.cameraMode === 'CHASE' ? 'COCKPIT' : 'CHASE';
-      document.getElementById('btn-cam').textContent = this.input.isTouchDevice
-        ? `CAM: ${this.cameraMode === 'CHASE' ? '3RD' : '1ST'}`
-        : `CAM: ${this.cameraMode} [C]`;
+      const btnCam = document.getElementById('btn-cam');
+      if (btnCam) {
+        btnCam.textContent = this.input.isTouchDevice
+          ? `CAM: ${this.cameraMode === 'CHASE' ? '3RD' : '1ST'}`
+          : `CAM: ${this.cameraMode} [C]`;
+      }
     }
 
     toggleMute() {
       this.audio.setMuted(!this.audio.muted);
       const btn = document.getElementById('btn-mute');
-      btn.textContent = this.input.isTouchDevice
-        ? (this.audio.muted ? 'UNMUTE' : 'AUDIO')
-        : `AUDIO: ${this.audio.muted ? 'MUTED' : 'ON'} [M]`;
-      btn.classList.toggle('active', !this.audio.muted);
+      if (btn) {
+        btn.textContent = this.input.isTouchDevice
+          ? (this.audio.muted ? 'UNMUTE' : 'AUDIO')
+          : `AUDIO: ${this.audio.muted ? 'MUTED' : 'ON'} [M]`;
+        btn.classList.toggle('active', !this.audio.muted);
+      }
     }
 
     setPaused(pause) {
@@ -1713,7 +1781,13 @@
 
       // Show full-screen hangar workshop screen
       const hangarScreen = document.getElementById('respawn-hangar-screen');
-      if (hangarScreen) hangarScreen.classList.remove('hidden');
+      if (hangarScreen) {
+        hangarScreen.classList.remove('hidden', 'tab-upgrades-active', 'tab-paint-active');
+        hangarScreen.classList.add('tab-fighter-active');
+      }
+      document.querySelectorAll('.respawn-tab-btn').forEach(b => {
+        b.classList.toggle('active', b.dataset.tab === 'fighter');
+      });
 
       // 3D ISOLATION: Show ONLY the 3D plane illuminated in studio void (hide all other entities/hangar bay structure)
       if (this.studioVoid) this.studioVoid.visible = true;
