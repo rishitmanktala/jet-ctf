@@ -79,7 +79,7 @@
 
       // 2. Expanding 3D Impact Shockwave Ring around the bullet strike
       const ringMat = new THREE.MeshBasicMaterial({
-        color: isPlayerVictim ? 0xff3b47 : 0xfbbf24,
+        color: isPlayerVictim ? 0xc9443e : 0xd9822b,
         transparent: true,
         opacity: 0.95,
         side: THREE.DoubleSide,
@@ -109,7 +109,7 @@
         if (planeVel) {
           sparkVel.addScaledVector(planeVel, 0.35);
         }
-        const sparkColor = i % 3 === 0 ? 0xffffff : (i % 2 === 0 ? 0xff3b47 : 0xfbbf24);
+        const sparkColor = i % 3 === 0 ? 0xf5ecd7 : (i % 2 === 0 ? 0xd9603b : 0xe0922b);
         this.spawnParticle(
           pos,
           sparkVel,

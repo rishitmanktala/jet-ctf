@@ -1,7 +1,7 @@
 "use strict";
 
   /* ============================================================================
-   * 11. TACTICAL CTF HUD & 2D CANVAS RENDERER (With 10:00 Clock, Flag-Drop & Hit Animations)
+   * 11. COMBAT AVIONICS HUD RENDERER (Compass Tape, De-Conflicted IFF & MFD)
    * ============================================================================
    */
   class HUDRenderer {
@@ -18,6 +18,32 @@
       this.playerHitTimer = 0;
       this.playerHitAngle = 0;
       this.playerHitLastDmg = 0;
+      this.hudColorTheme = 'GREEN';
+      this.showFps = false;
+    }
+
+    getThemePalette() {
+      const themes = {
+        AMBER: {
+          main: '#d9822b',
+          soft: 'rgba(217, 130, 43, 0.48)',
+          dim: 'rgba(217, 130, 43, 0.22)',
+          glass: 'rgba(217, 130, 43, 0.045)'
+        },
+        ICE: {
+          main: '#69b8f5',
+          soft: 'rgba(105, 184, 245, 0.45)',
+          dim: 'rgba(105, 184, 245, 0.22)',
+          glass: 'rgba(105, 184, 245, 0.045)'
+        },
+        GREEN: {
+          main: '#52c468',
+          soft: 'rgba(82, 196, 104, 0.44)',
+          dim: 'rgba(82, 196, 104, 0.22)',
+          glass: 'rgba(82, 196, 104, 0.04)'
+        }
+      };
+      return themes[this.hudColorTheme] || themes.GREEN;
     }
 
     resize(w, h) {
@@ -52,7 +78,7 @@
       }
     }
 
-    addDamageNumber(worldPos, text, color = '#fbbf24', isLarge = false) {
+    addDamageNumber(worldPos, text, color = '#d9822b', isLarge = false) {
       this.damageNumbers.push({
         worldPos: worldPos.clone(),
         text,
@@ -60,12 +86,12 @@
         isLarge,
         age: 0,
         life: 0.95,
-        offsetX: (Math.random() - 0.5) * 26
+        offsetX: (Math.random() - 0.5) * 24
       });
       if (this.damageNumbers.length > 18) this.damageNumbers.shift();
     }
 
-    addPopup(text, color = '#00ff9d') {
+    addPopup(text, color = '#52c468') {
       this.popups.push({
         text,
         color,
@@ -93,170 +119,427 @@
 
       const cx = w * 0.5;
       const cy = h * 0.5;
-      const hudColor = '#00ff9d';
-      const warnColor = '#ff3b47';
-      const cyanColor = '#38bdf8';
+      const pal = this.getThemePalette();
+      const hudColor = pal.main;
+      const warnColor = '#c9443e';
       const isMobile = Boolean(input && input.touchUIVisible);
 
-      // 1. Live Green FPS Counter (Top-Left)
-      const curFps = 1 / Math.max(0.001, dt);
-      this.fps = this.fps ? (this.fps * 0.92 + curFps * 0.08) : curFps;
-      this.renderFpsCounter(ctx);
-
-      // 2. Dual Team Rosters (Red Top-Left, Blue Top-Right)
-      if (!isMobile) {
-        this.renderDualTeamRosters(ctx, w, h, allAircraft, ac);
+      if (dt > 0.0005) {
+        const curFps = 1 / dt;
+        this.fps = this.fps ? (this.fps * 0.92 + curFps * 0.08) : curFps;
+      } else if (!this.fps) {
+        this.fps = 60;
       }
 
-      // 3. Top-Center CTF Score, 10:00 Countdown Clock & Flag Status Banner
-      this.renderCtfTopBanner(ctx, cx, teamCaptures, world.flags, ac, isMobile, remainingMatchSec, isSuddenDeath);
+      if (this.showFps) {
+        this.renderFpsCounter(ctx, pal);
+      }
+      this.renderCtfTopBanner(ctx, cx, teamCaptures, world.flags, remainingMatchSec, isSuddenDeath);
 
       if (!ac.alive) {
         ctx.save();
-        ctx.fillStyle = '#fbbf24';
-        ctx.font = isMobile ? 'bold 16px Consolas, monospace' : 'bold 22px Consolas, monospace';
+        ctx.fillStyle = '#d9822b';
+        ctx.font = '700 18px "Share Tech Mono", monospace';
         ctx.textAlign = 'center';
-        ctx.fillText(`RE-DEPLOYING IN ${Math.max(0.1, ac.respawnTimer).toFixed(1)}s...`, cx, cy - 20);
+        ctx.fillText(`RE-DEPLOY IN ${Math.max(0.1, ac.respawnTimer).toFixed(1)}s`, cx, cy - 20);
         ctx.restore();
         return;
       }
 
-      if (ac.isTakingOff) {
-        ctx.save();
-        ctx.textAlign = 'center';
-        ctx.fillStyle = '#fbbf24';
-        ctx.font = isMobile ? '800 13px "Chakra Petch", sans-serif' : '800 16px "Chakra Petch", sans-serif';
-        ctx.fillText('🛫 RUNWAY TAKEOFF ROLL // AFTERBURNER ENGAGED', cx, cy + 85);
-        ctx.font = '700 11.5px monospace';
-        ctx.fillStyle = '#38bdf8';
-        ctx.fillText(`AIRBORNE IN ${Math.max(0, ac.takeoffTimer).toFixed(1)}s`, cx, cy + 106);
-
-        const barW = isMobile ? 160 : 220;
-        const barH = 5;
-        const p = Math.max(0, Math.min(1.0, (1.5 - ac.takeoffTimer) / 1.5));
-        ctx.fillStyle = 'rgba(15, 23, 42, 0.75)';
-        ctx.fillRect(cx - barW * 0.5, cy + 114, barW, barH);
-        ctx.fillStyle = '#00ff9d';
-        ctx.fillRect(cx - barW * 0.5, cy + 114, barW * p, barH);
-        ctx.restore();
-      }
+      _euler1.setFromQuaternion(ac.mesh.quaternion, 'YXZ');
+      const headingDeg = (THREE.MathUtils.radToDeg(-_euler1.y) % 360 + 360) % 360;
+      const pitchRad = _euler1.x;
+      const bankRad = _euler1.z;
+      const altM = Math.max(0, Math.round(ac.mesh.position.y));
+      const groundH = world
+        ? Math.max(CONFIG.WORLD.seaLevel, world.getTerrainHeight(ac.mesh.position.x, ac.mesh.position.z))
+        : CONFIG.WORLD.seaLevel;
+      const aglM = Math.max(0, Math.round(ac.mesh.position.y - groundH));
 
       if (cameraMode === 'COCKPIT') {
-        ctx.save();
-        ctx.strokeStyle = 'rgba(20, 32, 48, 0.88)';
-        ctx.lineWidth = isMobile ? 9 : 14;
-        ctx.beginPath();
-        ctx.moveTo(w * 0.14, h);
-        ctx.quadraticCurveTo(w * 0.25, h * 0.35, w * 0.36, 0);
-        ctx.moveTo(w * 0.86, h);
-        ctx.quadraticCurveTo(w * 0.75, h * 0.35, w * 0.64, 0);
-        ctx.stroke();
-        ctx.restore();
+        this.renderCockpitCanopyFrame(ctx, w, h, cx, cy, pal);
       }
 
-      // High-Speed Anime Radial Speed Lines when Boosting or in Overdrive!
+      this.renderCompassTape(ctx, cx, headingDeg, pal);
+      this.renderHorizonAndPitchLadder(ctx, cx, cy, pitchRad, bankRad, pal);
+
+      if (ac.isTakingOff) {
+        this.renderTakeoffRollBanner(ctx, cx, cy, ac);
+      }
+
       if (ac.flight.isBoosting || ac.overdriveTimer > 0) {
-        ctx.save();
-        const isOD = ac.overdriveTimer > 0;
-        const grad = ctx.createRadialGradient(cx, cy, h * 0.26, cx, cy, h * 0.68);
-        grad.addColorStop(0, 'rgba(0,0,0,0)');
-        grad.addColorStop(1, isOD ? 'rgba(251, 191, 36, 0.20)' : 'rgba(56, 189, 248, 0.18)');
-        ctx.fillStyle = grad;
-        ctx.fillRect(0, 0, w, h);
-
-        ctx.strokeStyle = isOD ? 'rgba(251, 191, 36, 0.35)' : 'rgba(125, 211, 252, 0.28)';
-        ctx.lineWidth = 1.6;
-        const streakPhase = Math.floor(performance.now() / 45);
-        for (let i = 0; i < 22; i++) {
-          const ang = (i / 22) * Math.PI * 2 + (streakPhase * 0.17);
-          const rInner = Math.min(w, h) * (0.36 + ((i * 7 + streakPhase) % 5) * 0.04);
-          const rOuter = Math.max(w, h) * 0.68;
-          ctx.beginPath();
-          ctx.moveTo(cx + Math.cos(ang) * rInner, cy + Math.sin(ang) * rInner);
-          ctx.lineTo(cx + Math.cos(ang) * rOuter, cy + Math.sin(ang) * rOuter);
-          ctx.stroke();
-        }
-        ctx.restore();
+        this.renderSpeedLines(ctx, cx, cy, w, h, ac.overdriveTimer > 0);
       }
 
-      // 2B. ANIMATED BULLET-HIT EFFECT WHEN PLAYER'S PLANE IS HIT BY BULLETS!
       if (this.playerHitTimer > 0) {
-        this.playerHitTimer = Math.max(0, this.playerHitTimer - dt);
-        const hitAlpha = Math.min(1.0, this.playerHitTimer / 0.55);
+        this.renderPlayerHitEffect(ctx, dt, cx, cy, w, h);
+      }
 
+      // Boresight & Stabilized Aim Reticle
+      const { bx, by } = this.renderReticles(ctx, dt, ac, camera, input, isSpectating, isMobile, w, h, cx, cy, hudColor);
+
+      // Floating Damage Numbers
+      this.renderDamageNumbers(ctx, dt, camera, w, h);
+
+      // Airbrake Turn Feedback
+      if (!isMobile && ac.flight.isAirBraking) {
         ctx.save();
-        const hitGrad = ctx.createRadialGradient(cx, cy, h * 0.22, cx, cy, h * 0.66);
-        hitGrad.addColorStop(0, 'rgba(255, 40, 60, 0.0)');
-        hitGrad.addColorStop(1, `rgba(255, 35, 55, ${(hitAlpha * 0.46).toFixed(3)})`);
-        ctx.fillStyle = hitGrad;
-        ctx.fillRect(0, 0, w, h);
-
-        ctx.fillStyle = `rgba(255, 59, 71, ${(hitAlpha * 0.25).toFixed(3)})`;
-        for (let s = 0; s < 4; s++) {
-          const scanY = ((performance.now() * 0.8 + s * 190) % h);
-          ctx.fillRect(0, scanY, w, 3);
-        }
-
-        const arcRadius = Math.min(w, h) * 0.23;
-        ctx.strokeStyle = `rgba(255, 59, 71, ${(hitAlpha * 0.95).toFixed(3)})`;
-        ctx.lineWidth = 7.0;
-        ctx.beginPath();
-        ctx.arc(cx, cy, arcRadius, this.playerHitAngle - Math.PI * 0.5 - 0.42, this.playerHitAngle - Math.PI * 0.5 + 0.42);
-        ctx.stroke();
-
-        const silX = cx;
-        const silY = cy + 88;
-        ctx.translate(silX, silY);
-        const joltX = (Math.random() - 0.5) * 6 * hitAlpha;
-        const joltY = (Math.random() - 0.5) * 6 * hitAlpha;
-        ctx.translate(joltX, joltY);
-
-        ctx.fillStyle = `rgba(255, 59, 71, ${(hitAlpha * 0.85).toFixed(3)})`;
-        ctx.strokeStyle = `rgba(255, 255, 255, ${(hitAlpha * 0.95).toFixed(3)})`;
-        ctx.lineWidth = 1.8;
-        ctx.beginPath();
-        ctx.moveTo(0, -18);
-        ctx.lineTo(5, -6);
-        ctx.lineTo(22, 6);
-        ctx.lineTo(22, 11);
-        ctx.lineTo(6, 8);
-        ctx.lineTo(9, 17);
-        ctx.lineTo(0, 14);
-        ctx.lineTo(-9, 17);
-        ctx.lineTo(-6, 8);
-        ctx.lineTo(-22, 11);
-        ctx.lineTo(-22, 6);
-        ctx.lineTo(-5, -6);
-        ctx.closePath();
-        ctx.fill();
-        ctx.stroke();
-
-        ctx.strokeStyle = `rgba(251, 191, 36, ${(hitAlpha * 0.95).toFixed(3)})`;
-        ctx.lineWidth = 2.0;
-        for (let k = 0; k < 6; k++) {
-          const a = (k / 6) * Math.PI * 2 + performance.now() * 0.02;
-          const r1 = 10 + (1 - hitAlpha) * 12;
-          const r2 = r1 + 9;
-          ctx.beginPath();
-          ctx.moveTo(Math.cos(a) * r1, Math.sin(a) * r1);
-          ctx.lineTo(Math.cos(a) * r2, Math.sin(a) * r2);
-          ctx.stroke();
-        }
-
-        ctx.font = 'bold 13px Consolas, monospace';
-        ctx.fillStyle = '#ff3b47';
+        ctx.fillStyle = '#d9822b';
+        ctx.font = '700 10.5px "Share Tech Mono", monospace';
         ctx.textAlign = 'center';
-        ctx.fillText(`💥 HULL HIT! -${this.playerHitLastDmg} HP`, 0, 32);
+        ctx.fillText('AIRBRAKE ACTIVE', cx, cy + 122);
         ctx.restore();
       }
+
+      // De-conflicted Flags, Offscreen Chevrons & Target Acquisition Boxes
+      this.renderWorldMarkersAndTargets(ctx, ac, allAircraft, world.flags, camera, w, h, cx, cy, bx, by, warnColor, pal);
+
+      // Popups & Center Alerts
+      this.renderCenterPopupsAndWarnings(ctx, dt, cx, cy, ac, aglM, warnColor);
+
+      // Grounded Tactical Radar & Right Avionics Block
+      this.renderRadar(ctx, ac, allAircraft, world, w, h, headingDeg, isMobile, pal);
+      this.renderAvionicsBlock(ctx, w, h, ac, altM, aglM, pal);
+    }
+
+    renderFpsCounter(ctx, pal) {
+      ctx.save();
+      ctx.font = '700 10.5px "Share Tech Mono", monospace';
+      ctx.fillStyle = pal ? pal.main : 'rgba(82, 196, 104, 0.85)';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'top';
+      ctx.fillText(`${Math.round(this.fps || 60)} FPS`, 16, 14);
+      ctx.restore();
+    }
+
+    renderCtfTopBanner(ctx, cx, teamCaptures, flags, remainingMatchSec = 600, isSuddenDeath = false) {
+      ctx.save();
+      const bw = 420;
+      const bh = 38;
+      const bx = cx - bw * 0.5;
+      const by = 8;
+
+      ctx.fillStyle = 'rgba(12, 14, 17, 0.86)';
+      ctx.fillRect(bx, by, bw, bh);
+
+      if (isSuddenDeath) {
+        ctx.strokeStyle = ((Math.floor(performance.now() / 220) % 2 === 0) ? '#d9822b' : '#c9443e');
+        ctx.lineWidth = 1.6;
+      } else {
+        ctx.strokeStyle = remainingMatchSec < 60 ? 'rgba(201, 68, 62, 0.7)' : 'rgba(234, 231, 223, 0.22)';
+        ctx.lineWidth = 1.2;
+      }
+      ctx.strokeRect(bx, by, bw, bh);
+
+      const capGoal = CONFIG.CTF.capturesToWin;
+      const drawPips = (startX, count, color, reverse) => {
+        for (let i = 0; i < capGoal; i++) {
+          const idx = reverse ? (capGoal - 1 - i) : i;
+          const filled = i < count;
+          const px = startX + idx * 10;
+          ctx.fillStyle = filled ? color : 'rgba(255, 255, 255, 0.14)';
+          ctx.fillRect(px, by + 10, 7, 6);
+        }
+      };
+
+      const flagStateLabel = (f) => {
+        if (!f || f.state === 'AT_BASE') return 'HOME';
+        if (f.state === 'DROPPED') return `DROP ${Math.ceil(f.dropTimer)}s`;
+        if (f.state === 'CARRIED' && f.carrier) return f.carrier.callsign.slice(0, 8).toUpperCase();
+        return 'ACTIVE';
+      };
+
+      // Blue Left Side
+      ctx.font = '700 13px "Share Tech Mono", monospace';
+      ctx.fillStyle = '#5e97d1';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'top';
+      ctx.fillText(`BLUE ${teamCaptures.BLUE}`, bx + 12, by + 6);
+      drawPips(bx + 72, teamCaptures.BLUE, '#5e97d1', false);
+
+      ctx.font = '600 9.5px "Share Tech Mono", monospace';
+      ctx.fillStyle = flags.BLUE && flags.BLUE.state === 'AT_BASE' ? 'rgba(167, 197, 227, 0.72)' : '#d9822b';
+      ctx.fillText(`FLAG: ${flagStateLabel(flags.BLUE)}`, bx + 12, by + 23);
+
+      // Red Right Side
+      ctx.font = '700 13px "Share Tech Mono", monospace';
+      ctx.fillStyle = '#c9443e';
+      ctx.textAlign = 'right';
+      ctx.fillText(`${teamCaptures.RED} RED`, bx + bw - 12, by + 6);
+      drawPips(bx + bw - 98, teamCaptures.RED, '#c9443e', true);
+
+      ctx.font = '600 9.5px "Share Tech Mono", monospace';
+      ctx.fillStyle = flags.RED && flags.RED.state === 'AT_BASE' ? 'rgba(226, 164, 161, 0.72)' : '#d9822b';
+      ctx.fillText(`FLAG: ${flagStateLabel(flags.RED)}`, bx + bw - 12, by + 23);
+
+      // Center Clock / Match Goal
+      ctx.textAlign = 'center';
+      if (isSuddenDeath) {
+        ctx.fillStyle = (Math.floor(performance.now() / 220) % 2 === 0) ? '#d9822b' : '#eae7df';
+        ctx.font = '700 11px "Share Tech Mono", monospace';
+        ctx.fillText('SUDDEN DEATH', cx, by + 9);
+        ctx.font = '600 9px "Share Tech Mono", monospace';
+        ctx.fillStyle = '#9a9e9f';
+        ctx.fillText('GOLDEN CAPTURE', cx, by + 23);
+      } else {
+        const clockStr = HUDRenderer.formatClock(remainingMatchSec);
+        ctx.fillStyle = remainingMatchSec < 60
+          ? ((Math.floor(performance.now() / 250) % 2 === 0) ? '#c9443e' : '#eae7df')
+          : (remainingMatchSec < 180 ? '#d9822b' : '#eae7df');
+        ctx.font = '700 14px "Share Tech Mono", monospace';
+        ctx.fillText(clockStr, cx, by + 6);
+        ctx.font = '600 9px "Share Tech Mono", monospace';
+        ctx.fillStyle = '#9a9e9f';
+        ctx.fillText(`FIRST TO ${capGoal}`, cx, by + 24);
+      }
+      ctx.restore();
+    }
+
+    renderCompassTape(ctx, cx, headingDeg, pal) {
+      ctx.save();
+      const tapeW = 260;
+      const tapeY = 54;
+      const pxPerDeg = 2.6;
+
+      // Clip horizontal heading window
+      ctx.beginPath();
+      ctx.rect(cx - tapeW * 0.5, tapeY, tapeW, 20);
+      ctx.clip();
+
+      ctx.strokeStyle = 'rgba(234, 231, 223, 0.28)';
+      ctx.fillStyle = 'rgba(234, 231, 223, 0.72)';
+      ctx.font = '700 9.5px "Share Tech Mono", monospace';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'top';
+
+      const cardinals = { 0: 'N', 45: 'NE', 90: 'E', 135: 'SE', 180: 'S', 225: 'SW', 270: 'W', 315: 'NW' };
+      const centerDeg = Math.round(headingDeg / 15) * 15;
+      for (let d = centerDeg - 60; d <= centerDeg + 60; d += 15) {
+        const normD = ((d % 360) + 360) % 360;
+        let diff = d - headingDeg;
+        if (diff > 180) diff -= 360;
+        if (diff < -180) diff += 360;
+        const x = cx + diff * pxPerDeg;
+
+        const isMajor = normD % 45 === 0;
+        ctx.beginPath();
+        ctx.moveTo(x, tapeY);
+        ctx.lineTo(x, tapeY + (isMajor ? 6 : 4));
+        ctx.stroke();
+
+        const lbl = cardinals[normD] || String(normD).padStart(3, '0');
+        ctx.fillStyle = normD === 0 ? '#d9822b' : (isMajor ? 'rgba(234, 231, 223, 0.85)' : 'rgba(234, 231, 223, 0.45)');
+        ctx.fillText(lbl, x, tapeY + 7);
+      }
+      ctx.restore();
+
+      // Center lubber caret
+      ctx.save();
+      ctx.fillStyle = pal ? pal.main : '#52c468';
+      ctx.beginPath();
+      ctx.moveTo(cx, 54);
+      ctx.lineTo(cx - 3.5, 50);
+      ctx.lineTo(cx + 3.5, 50);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+    }
+
+    renderHorizonAndPitchLadder(ctx, cx, cy, pitchRad, bankRad, pal) {
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.rotate(-bankRad);
+
+      const pitchOffsetY = THREE.MathUtils.clamp(THREE.MathUtils.radToDeg(pitchRad) * 4.5, -160, 160);
+      ctx.translate(0, pitchOffsetY);
+
+      ctx.strokeStyle = pal ? pal.dim : 'rgba(82, 196, 104, 0.28)';
+      ctx.fillStyle = pal ? pal.soft : 'rgba(82, 196, 104, 0.40)';
+      ctx.font = '600 8.5px "Share Tech Mono", monospace';
+      ctx.lineWidth = 1.1;
+
+      const rungs = [-20, -10, 0, 10, 20];
+      for (const deg of rungs) {
+        const y = -deg * 4.5;
+        if (Math.abs(y + pitchOffsetY) > 125) continue;
+
+        const innerGap = deg === 0 ? 52 : 42;
+        const outerSpan = deg === 0 ? 112 : 76;
+
+        ctx.beginPath();
+        if (deg < 0) ctx.setLineDash([4, 3]);
+        else ctx.setLineDash([]);
+        ctx.moveTo(-outerSpan, y);
+        ctx.lineTo(-innerGap, y);
+        ctx.moveTo(innerGap, y);
+        ctx.lineTo(outerSpan, y);
+        ctx.stroke();
+
+        ctx.setLineDash([]);
+        if (deg !== 0) {
+          const tickDir = deg > 0 ? 5 : -5;
+          ctx.beginPath();
+          ctx.moveTo(-outerSpan, y);
+          ctx.lineTo(-outerSpan, y + tickDir);
+          ctx.moveTo(outerSpan, y);
+          ctx.lineTo(outerSpan, y + tickDir);
+          ctx.stroke();
+
+          ctx.textAlign = 'left';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(`${Math.abs(deg)}`, outerSpan + 5, y);
+        }
+      }
+      ctx.restore();
+    }
+
+    renderTakeoffRollBanner(ctx, cx, cy, ac) {
+      ctx.save();
+      ctx.textAlign = 'center';
+      ctx.fillStyle = '#d9822b';
+      ctx.font = '700 13px "Chakra Petch", sans-serif';
+      ctx.fillText('TAKEOFF ROLL — AFTERBURNER ENGAGED', cx, cy + 88);
+      ctx.font = '700 10.5px "Share Tech Mono", monospace';
+      ctx.fillStyle = '#eae7df';
+      ctx.fillText(`ROTATE IN ${Math.max(0, ac.takeoffTimer).toFixed(1)}s`, cx, cy + 106);
+
+      const barW = 200;
+      const barH = 4;
+      const p = Math.max(0, Math.min(1.0, (1.5 - ac.takeoffTimer) / 1.5));
+      ctx.fillStyle = 'rgba(14, 16, 18, 0.85)';
+      ctx.fillRect(cx - barW * 0.5, cy + 114, barW, barH);
+      ctx.fillStyle = '#d9822b';
+      ctx.fillRect(cx - barW * 0.5, cy + 114, barW * p, barH);
+      ctx.restore();
+    }
+
+    renderCockpitCanopyFrame(ctx, w, h, cx, cy, pal) {
+      ctx.save();
+      const hudGlass = pal ? pal.glass : 'rgba(82, 196, 104, 0.04)';
+      const hudBorder = pal ? pal.dim : 'rgba(82, 196, 104, 0.24)';
+
+      // 1. Central Wide-Angle HUD Combiner Glass Panel
+      const combW = Math.min(340, w * 0.28);
+      const combH = Math.min(260, h * 0.34);
+      const combX = cx - combW * 0.5;
+      const combY = cy - combH * 0.58;
+      ctx.fillStyle = hudGlass;
+      ctx.beginPath();
+      ctx.moveTo(combX + 18, combY);
+      ctx.lineTo(combX + combW - 18, combY);
+      ctx.lineTo(combX + combW, combY + 26);
+      ctx.lineTo(combX + combW - 10, combY + combH);
+      ctx.lineTo(combX + 10, combY + combH);
+      ctx.lineTo(combX, combY + 26);
+      ctx.closePath();
+      ctx.fill();
+
+      ctx.strokeStyle = hudBorder;
+      ctx.lineWidth = 1.2;
+      ctx.stroke();
+
+      // Side optical combiner mount struts
+      ctx.strokeStyle = 'rgba(20, 23, 27, 0.88)';
+      ctx.lineWidth = 5;
+      ctx.beginPath();
+      ctx.moveTo(combX + 12, combY + combH);
+      ctx.lineTo(combX + 26, h * 0.84);
+      ctx.moveTo(combX + combW - 12, combY + combH);
+      ctx.lineTo(combX + combW - 26, h * 0.84);
+      ctx.stroke();
+
+      // 2. Sculpted Forward Glareshield Coaming Silhouette (Bottom Center)
+      ctx.fillStyle = 'rgba(13, 15, 18, 0.94)';
+      ctx.beginPath();
+      ctx.moveTo(w * 0.24, h);
+      ctx.lineTo(w * 0.30, h * 0.85);
+      ctx.lineTo(cx - 105, h * 0.80);
+      ctx.lineTo(cx + 105, h * 0.80);
+      ctx.lineTo(w * 0.70, h * 0.85);
+      ctx.lineTo(w * 0.76, h);
+      ctx.closePath();
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(234, 231, 223, 0.14)';
+      ctx.lineWidth = 1.2;
+      ctx.stroke();
+
+      // 3. Outer Angled Canopy Bow Framing Struts
+      ctx.strokeStyle = 'rgba(15, 17, 20, 0.92)';
+      ctx.lineWidth = 13;
+      ctx.beginPath();
+      ctx.moveTo(w * 0.11, h);
+      ctx.quadraticCurveTo(w * 0.21, h * 0.34, w * 0.33, 0);
+      ctx.moveTo(w * 0.89, h);
+      ctx.quadraticCurveTo(w * 0.79, h * 0.34, w * 0.67, 0);
+      ctx.stroke();
+
+      ctx.strokeStyle = 'rgba(234, 231, 223, 0.08)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(w * 0.116, h);
+      ctx.quadraticCurveTo(w * 0.216, h * 0.34, w * 0.336, 0);
+      ctx.moveTo(w * 0.884, h);
+      ctx.quadraticCurveTo(w * 0.784, h * 0.34, w * 0.664, 0);
+      ctx.stroke();
+
+      ctx.restore();
+    }
+
+    renderSpeedLines(ctx, cx, cy, w, h, isOverdrive) {
+      ctx.save();
+      const grad = ctx.createRadialGradient(cx, cy, h * 0.30, cx, cy, h * 0.72);
+      grad.addColorStop(0, 'rgba(0,0,0,0)');
+      grad.addColorStop(1, isOverdrive ? 'rgba(217, 130, 43, 0.12)' : 'rgba(234, 231, 223, 0.08)');
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, w, h);
+
+      ctx.strokeStyle = isOverdrive ? 'rgba(217, 130, 43, 0.22)' : 'rgba(234, 231, 223, 0.16)';
+      ctx.lineWidth = 1.2;
+      const streakPhase = Math.floor(performance.now() / 45);
+      for (let i = 0; i < 18; i++) {
+        const ang = (i / 18) * Math.PI * 2 + (streakPhase * 0.17);
+        const rInner = Math.min(w, h) * (0.38 + ((i * 7 + streakPhase) % 5) * 0.04);
+        const rOuter = Math.max(w, h) * 0.68;
+        ctx.beginPath();
+        ctx.moveTo(cx + Math.cos(ang) * rInner, cy + Math.sin(ang) * rInner);
+        ctx.lineTo(cx + Math.cos(ang) * rOuter, cy + Math.sin(ang) * rOuter);
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+
+    renderPlayerHitEffect(ctx, dt, cx, cy, w, h) {
+      this.playerHitTimer = Math.max(0, this.playerHitTimer - dt);
+      const hitAlpha = Math.min(1.0, this.playerHitTimer / 0.55);
 
       ctx.save();
-      ctx.font = 'bold 12px Consolas, monospace';
+      const hitGrad = ctx.createRadialGradient(cx, cy, h * 0.24, cx, cy, h * 0.66);
+      hitGrad.addColorStop(0, 'rgba(201, 68, 62, 0.0)');
+      hitGrad.addColorStop(1, `rgba(201, 68, 62, ${(hitAlpha * 0.42).toFixed(3)})`);
+      ctx.fillStyle = hitGrad;
+      ctx.fillRect(0, 0, w, h);
+
+      const arcRadius = Math.min(w, h) * 0.22;
+      ctx.strokeStyle = `rgba(201, 68, 62, ${(hitAlpha * 0.95).toFixed(3)})`;
+      ctx.lineWidth = 6.0;
+      ctx.beginPath();
+      ctx.arc(cx, cy, arcRadius, this.playerHitAngle - Math.PI * 0.5 - 0.38, this.playerHitAngle - Math.PI * 0.5 + 0.38);
+      ctx.stroke();
+
+      ctx.font = '700 12px "Share Tech Mono", monospace';
+      ctx.fillStyle = `rgba(201, 68, 62, ${hitAlpha.toFixed(2)})`;
+      ctx.textAlign = 'center';
+      ctx.fillText(`IMPACT -${this.playerHitLastDmg} HP`, cx, cy + 102);
+      ctx.restore();
+    }
+
+    renderReticles(ctx, dt, ac, camera, input, isSpectating, isMobile, w, h, cx, cy, hudColor) {
+      ctx.save();
       ctx.strokeStyle = hudColor;
       ctx.fillStyle = hudColor;
-      ctx.lineWidth = 1.6;
+      ctx.lineWidth = 1.5;
 
-      // 3. Aircraft Boresight Crosshair & Horizon-Stabilized Mouse Reticle
+      // Boresight fixed crosshair
       _v1.set(0, 0, -1).applyQuaternion(ac.mesh.quaternion);
       _v2.copy(ac.mesh.position).addScaledVector(_v1, 600);
       const bsScreen = this.projectToScreen(_v2, camera, w, h);
@@ -264,20 +547,20 @@
       const by = bsScreen.inFront ? bsScreen.y : cy;
 
       ctx.beginPath();
-      ctx.moveTo(bx - 12, by); ctx.lineTo(bx - 4, by);
-      ctx.moveTo(bx + 4, by);  ctx.lineTo(bx + 12, by);
-      ctx.moveTo(bx, by - 12); ctx.lineTo(bx, by - 4);
-      ctx.moveTo(bx, by + 4);  ctx.lineTo(bx, by + 12);
+      ctx.moveTo(bx - 11, by); ctx.lineTo(bx - 3, by);
+      ctx.moveTo(bx + 3, by);  ctx.lineTo(bx + 11, by);
+      ctx.moveTo(bx, by - 11); ctx.lineTo(bx, by - 3);
+      ctx.moveTo(bx, by + 3);  ctx.lineTo(bx, by + 11);
       ctx.stroke();
 
+      // Mouse Flight Aim Ring
       if (input && !isSpectating && !isMobile) {
         const mx = input.mouseScreenX;
         const my = input.mouseScreenY;
         const firing = input.mouseButtons.left || input.keys['KeyF'];
         const hasAssistLock = Boolean(ac.aimAssistTarget);
 
-        ctx.save();
-        ctx.strokeStyle = hasAssistLock ? 'rgba(0, 255, 157, 0.75)' : 'rgba(56, 189, 248, 0.45)';
+        ctx.strokeStyle = hasAssistLock ? hudColor : 'rgba(234, 231, 223, 0.22)';
         ctx.setLineDash([4, 4]);
         ctx.beginPath();
         ctx.moveTo(bx, by);
@@ -285,43 +568,45 @@
         ctx.stroke();
         ctx.setLineDash([]);
 
-        ctx.strokeStyle = hasAssistLock ? '#00ff9d' : (firing ? '#fbbf24' : '#38bdf8');
-        ctx.lineWidth = firing || hasAssistLock ? 2.5 : 1.8;
+        ctx.strokeStyle = hasAssistLock ? hudColor : (firing ? '#d9822b' : 'rgba(234, 231, 223, 0.72)');
+        ctx.lineWidth = firing || hasAssistLock ? 2.0 : 1.5;
         ctx.beginPath();
-        ctx.arc(mx, my, firing ? 18 : 14, 0, Math.PI * 2);
+        ctx.arc(mx, my, firing ? 16 : 13, 0, Math.PI * 2);
         ctx.stroke();
 
         if (hasAssistLock) {
-          ctx.font = 'bold 10px Consolas, monospace';
-          ctx.fillStyle = '#00ff9d';
+          ctx.font = '700 9.5px "Share Tech Mono", monospace';
+          ctx.fillStyle = hudColor;
           ctx.textAlign = 'center';
-          ctx.fillText('AUTO-LEAD LOCKED', mx, my - 22);
+          ctx.fillText('LEAD LOCK', mx, my - 20);
         }
 
-        ctx.fillStyle = firing ? '#fbbf24' : '#00ff9d';
+        ctx.fillStyle = firing ? '#d9822b' : hudColor;
         ctx.beginPath();
-        ctx.arc(mx, my, 3.2, 0, Math.PI * 2);
+        ctx.arc(mx, my, 2.5, 0, Math.PI * 2);
         ctx.fill();
-        ctx.restore();
       }
 
       if (this.hitmarkerTimer > 0) {
         this.hitmarkerTimer = Math.max(0, this.hitmarkerTimer - dt);
         const hx = (!isMobile && input) ? input.mouseScreenX : bx;
         const hy = (!isMobile && input) ? input.mouseScreenY : by;
-        const sz = this.hitmarkerIsKill ? 16 : 11;
-        ctx.save();
-        ctx.strokeStyle = this.hitmarkerIsKill ? '#ff3b47' : '#fbbf24';
-        ctx.lineWidth = 2.8;
+        const sz = this.hitmarkerIsKill ? 15 : 10;
+        ctx.strokeStyle = this.hitmarkerIsKill ? '#c9443e' : '#eae7df';
+        ctx.lineWidth = 2.4;
         ctx.beginPath();
         ctx.moveTo(hx - sz, hy - sz); ctx.lineTo(hx - 4, hy - 4);
         ctx.moveTo(hx + sz, hy - sz); ctx.lineTo(hx + 4, hy - 4);
         ctx.moveTo(hx - sz, hy + sz); ctx.lineTo(hx - 4, hy + 4);
         ctx.moveTo(hx + sz, hy + sz); ctx.lineTo(hx + 4, hy + 4);
         ctx.stroke();
-        ctx.restore();
       }
+      ctx.restore();
 
+      return { bx, by };
+    }
+
+    renderDamageNumbers(ctx, dt, camera, w, h) {
       for (let i = this.damageNumbers.length - 1; i >= 0; i--) {
         const dn = this.damageNumbers[i];
         dn.age += dt;
@@ -334,60 +619,134 @@
           const alpha = Math.min(1, (1 - dn.age / dn.life) * 1.4);
           ctx.save();
           ctx.globalAlpha = alpha;
-          ctx.font = dn.isLarge ? 'bold 16px Consolas, monospace' : 'bold 13px Consolas, monospace';
+          ctx.font = dn.isLarge ? '700 15px "Share Tech Mono", monospace' : '700 12px "Share Tech Mono", monospace';
           ctx.fillStyle = dn.color;
           ctx.textAlign = 'center';
-          ctx.fillText(dn.text, scr.x + dn.offsetX, scr.y - 18 - dn.age * 42);
+          ctx.fillText(dn.text, scr.x + dn.offsetX, scr.y - 18 - dn.age * 40);
           ctx.restore();
         }
       }
+    }
 
-      _euler1.setFromQuaternion(ac.mesh.quaternion, 'YXZ');
-      const headingDeg = (THREE.MathUtils.radToDeg(-_euler1.y) % 360 + 360) % 360;
-      const altM = Math.max(0, Math.round(ac.mesh.position.y));
-      const groundH = world
-        ? Math.max(CONFIG.WORLD.seaLevel, world.getTerrainHeight(ac.mesh.position.x, ac.mesh.position.z))
-        : CONFIG.WORLD.seaLevel;
-      const aglM = Math.max(0, Math.round(ac.mesh.position.y - groundH));
+    _computeOffscreenChevron(worldPos, camera, cx, cy, w, h, color, label, distStr, isPriority = false) {
+      _v3.copy(worldPos).applyMatrix4(camera.matrixWorldInverse);
+      let dx = _v3.x;
+      let dy = -_v3.y;
+      if (_v3.z > 0) {
+        const mag = Math.hypot(dx, dy);
+        if (mag < 0.001) { dx = 0; dy = 1; }
+      }
+      const len = Math.max(0.0001, Math.hypot(dx, dy));
+      dx /= len;
+      dy /= len;
 
-      // 4. Center-Reticle Airbrake Turn Feedback
-      if (!isMobile && ac.flight.isAirBraking) {
-        ctx.save();
-        ctx.fillStyle = '#38bdf8';
-        ctx.font = '700 11px "Orbitron", Consolas, monospace';
-        ctx.textAlign = 'center';
-        ctx.fillText('⟲ HIGH-G AIR-BRAKE TURN (+38% AGILITY)', cx, cy + 122);
-        ctx.restore();
+      const rx = w * 0.5 - 52;
+      const ryTop = cy - 92;
+      const ryBot = h - cy - 58;
+      const sx = dx !== 0 ? Math.abs(rx / dx) : 1e6;
+      const sy = dy < 0 ? Math.abs(ryTop / dy) : (dy > 0 ? Math.abs(ryBot / dy) : 1e6);
+      const t = Math.min(sx, sy, Math.min(w, h) * 0.42);
+
+      let ax = Math.max(46, Math.min(w - 46, cx + dx * t));
+      let ay = Math.max(92, Math.min(h - 54, cy + dy * t));
+      // Protect bottom-left Radar & bottom-right Avionics MFD safe zones
+      if (ax < 220 && ay > h - 215) ay = h - 215;
+      if (ax > w - 295 && ay > h - 185) ay = h - 185;
+
+      return {
+        ax,
+        ay,
+        dx,
+        dy,
+        ang: Math.atan2(dy, dx),
+        sz: isPriority ? 10 : 8,
+        color,
+        text: label ? (distStr ? `${label} ${distStr}` : label) : '',
+        priority: isPriority ? 3 : 1
+      };
+    }
+
+    renderWorldMarkersAndTargets(ctx, ac, allAircraft, flags, camera, w, h, cx, cy, bx, by, warnColor, pal) {
+      const labelQueue = [];
+      const offscreenQueue = [];
+      const lockCol = pal ? pal.main : '#52c468';
+
+      // Track carriers already represented by flag chevrons so we don't draw duplicate chevrons on the same jet
+      const flagCarriedTargets = new Set();
+
+      // 1. Project & draw CTF Flag Diamonds at exact world screen coordinates + Offscreen Chevrons
+      if (flags) {
+        for (const key of ['BLUE', 'RED']) {
+          const f = flags[key];
+          if (!f || f.carrier === ac) continue;
+
+          _v1.copy(f.pos).add(new THREE.Vector3(0, 65, 0));
+          const scr = this.projectToScreen(_v1, camera, w, h);
+          const distM = Math.round(ac.mesh.position.distanceTo(f.pos));
+          const distStr = distM >= 1000 ? `${(distM / 1000).toFixed(1)}km` : `${distM}m`;
+          const col = key === 'BLUE' ? '#5e97d1' : '#c9443e';
+          const isEnemyFlag = key !== ac.team;
+          const flagLbl = isEnemyFlag
+            ? (f.state === 'CARRIED' ? 'ESCORT' : `${key} FLAG`)
+            : (f.state === 'AT_BASE' ? `${key} BASE` : (f.state === 'DROPPED' ? `RECOVER ${key}` : `DEFEND ${key}`));
+
+          if (scr.inFront && scr.x >= 32 && scr.x <= w - 32 && scr.y >= 80 && scr.y <= h - 32) {
+            ctx.save();
+            ctx.strokeStyle = col;
+            ctx.lineWidth = 1.8;
+            ctx.beginPath();
+            ctx.moveTo(scr.x, scr.y - 11);
+            ctx.lineTo(scr.x + 11, scr.y);
+            ctx.lineTo(scr.x, scr.y + 11);
+            ctx.lineTo(scr.x - 11, scr.y);
+            ctx.closePath();
+            ctx.stroke();
+            ctx.restore();
+
+            labelQueue.push({
+              anchorX: scr.x,
+              anchorY: scr.y - 14,
+              x: scr.x,
+              y: scr.y - 22,
+              text: `${flagLbl} ${distStr}`,
+              subText: null,
+              color: col,
+              align: 'center',
+              priority: isEnemyFlag || f.state !== 'AT_BASE' ? 4 : 2,
+              distSq: distM * distM
+            });
+          } else {
+            if (f.state === 'CARRIED' && f.carrier) flagCarriedTargets.add(f.carrier);
+            offscreenQueue.push(
+              this._computeOffscreenChevron(f.pos, camera, cx, cy, w, h, col, flagLbl, distStr, isEnemyFlag || f.state !== 'AT_BASE')
+            );
+          }
+        }
       }
 
-      // 5. Bottom-Center Futuristic Metallic Hull Health Bar
-      this.renderBottomCenterHealthBar(ctx, cx, h, ac);
-
-      // 6. Bottom-Right Circular Speedometer & Vertical Nitro Boost Tube
-      this.renderSpeedometerAndBoostTube(ctx, w, h, ac, altM, aglM, isMobile);
-
-      // 5. 3D World Flag Beacons
-      this.renderFlagMarkers3D(ctx, ac, world.flags, camera, w, h);
-
-      // 6. Aircraft Target Boxes & Lead Indicator Pippers (With Live Situational AI State Tags!)
+      // 2. Project & draw Enemy & Friendly Target Brackets
       for (const other of allAircraft) {
         if (!other.alive || other === ac) continue;
         const isEnemy = other.team !== ac.team;
         const isCurrentTarget = other === ac.target;
         const screen = this.projectToScreen(other.mesh.position, camera, w, h);
         const dist = Math.round(ac.mesh.position.distanceTo(other.mesh.position));
+        const distStr = dist >= 1000 ? `${(dist / 1000).toFixed(1)}km` : `${dist}m`;
 
-        if (screen.inFront && screen.x >= 20 && screen.x <= w - 20 && screen.y >= 20 && screen.y <= h - 20) {
-          if (isEnemy && (isCurrentTarget || other.carryingFlag || dist < 2600)) {
+        if (screen.inFront && screen.x >= 20 && screen.x <= w - 20 && screen.y >= 78 && screen.y <= h - 20) {
+          if (isEnemy && (isCurrentTarget || other.carryingFlag || dist < 3400)) {
             const isBeingHit = other.hitFlashTimer > 0;
-            const boxS = isCurrentTarget ? (isBeingHit ? 22 : 18) : 13;
-            ctx.strokeStyle = isBeingHit
-              ? '#ffffff'
-              : (other.carryingFlag ? '#fbbf24' : (isCurrentTarget ? warnColor : 'rgba(255, 71, 87, 0.78)'));
-            ctx.lineWidth = isBeingHit ? 2.6 : (isCurrentTarget || other.carryingFlag ? 2.0 : 1.3);
+            const isDistant = !isCurrentTarget && !other.carryingFlag && dist > 2600;
+            const boxS = isCurrentTarget ? (isBeingHit ? 20 : 17) : (isDistant ? 9 : 12);
+            const inBoresightCone = Math.hypot(screen.x - bx, screen.y - by) < 86;
 
-            // High-Tech Corner Brackets
-            const bL = Math.max(4, boxS * 0.42);
+            ctx.save();
+            ctx.strokeStyle = isBeingHit
+              ? '#eae7df'
+              : (other.carryingFlag ? '#d9822b' : (isCurrentTarget ? warnColor : (isDistant ? 'rgba(201, 68, 62, 0.42)' : 'rgba(201, 68, 62, 0.78)')));
+            ctx.lineWidth = isBeingHit ? 2.4 : (isCurrentTarget || other.carryingFlag ? 1.8 : 1.15);
+
+            const bL = Math.max(3.5, boxS * 0.40);
             ctx.beginPath();
             ctx.moveTo(screen.x - boxS, screen.y - boxS + bL); ctx.lineTo(screen.x - boxS, screen.y - boxS); ctx.lineTo(screen.x - boxS + bL, screen.y - boxS);
             ctx.moveTo(screen.x + boxS - bL, screen.y - boxS); ctx.lineTo(screen.x + boxS, screen.y - boxS); ctx.lineTo(screen.x + boxS, screen.y - boxS + bL);
@@ -395,20 +754,15 @@
             ctx.moveTo(screen.x - boxS + bL, screen.y + boxS); ctx.lineTo(screen.x - boxS, screen.y + boxS); ctx.lineTo(screen.x - boxS, screen.y + boxS - bL);
             ctx.stroke();
 
-            ctx.fillStyle = other.carryingFlag ? '#fbbf24' : (isCurrentTarget ? '#ff4757' : '#fda4af');
-            ctx.font = '700 11px "Orbitron", Consolas, monospace';
-            const tag = other.carryingFlag ? `🚩 ${other.callsign}` : other.callsign;
-            ctx.fillText(tag, screen.x - boxS, screen.y - boxS - 14);
+            // Thin hostile HP bar under bracket (skip faint far non-priority brackets)
+            if (!isDistant) {
+              ctx.fillStyle = 'rgba(0,0,0,0.65)';
+              ctx.fillRect(screen.x - boxS, screen.y + boxS + 4, boxS * 2, 3);
+              ctx.fillStyle = isBeingHit ? '#d9822b' : warnColor;
+              ctx.fillRect(screen.x - boxS, screen.y + boxS + 4, (boxS * 2) * Math.max(0, other.hp / other.maxHp), 3);
+            }
 
-            ctx.font = '600 9.5px "Exo 2", monospace';
-            ctx.fillStyle = '#cbd5e1';
-            ctx.fillText(`${dist}m`, screen.x - boxS, screen.y - boxS - 3);
-
-            ctx.fillStyle = 'rgba(0,0,0,0.65)';
-            ctx.fillRect(screen.x - boxS, screen.y + boxS + 4, boxS * 2, 4);
-            ctx.fillStyle = isBeingHit ? '#fbbf24' : warnColor;
-            ctx.fillRect(screen.x - boxS, screen.y + boxS + 4, (boxS * 2) * (other.hp / other.maxHp), 4);
-
+            // Lead Pipper
             if ((isCurrentTarget || other.carryingFlag || dist < 1800) && dist < 2300) {
               const lead = WeaponsManager.computeLeadPosition(
                 ac.mesh.position,
@@ -419,8 +773,8 @@
               const leadScreen = this.projectToScreen(lead.leadPos, camera, w, h);
               if (leadScreen.inFront) {
                 const isLocked = ac.aimAssistTarget === other;
-                ctx.strokeStyle = isLocked ? '#00ff9d' : (isCurrentTarget ? '#38bdf8' : 'rgba(251, 191, 36, 0.78)');
-                ctx.lineWidth = isLocked ? 2.4 : 1.5;
+                ctx.strokeStyle = isLocked ? lockCol : (isCurrentTarget ? '#eae7df' : 'rgba(217, 130, 43, 0.72)');
+                ctx.lineWidth = isLocked ? 2.2 : 1.4;
                 ctx.setLineDash([3, 3]);
                 ctx.beginPath();
                 ctx.moveTo(screen.x, screen.y);
@@ -429,47 +783,147 @@
                 ctx.setLineDash([]);
 
                 ctx.beginPath();
-                ctx.arc(leadScreen.x, leadScreen.y, isLocked ? 12 : (isCurrentTarget ? 9 : 6), 0, Math.PI * 2);
+                ctx.arc(leadScreen.x, leadScreen.y, isLocked ? 11 : (isCurrentTarget ? 8 : 5.5), 0, Math.PI * 2);
                 ctx.stroke();
+                ctx.fillStyle = ctx.strokeStyle;
                 ctx.beginPath();
-                ctx.arc(leadScreen.x, leadScreen.y, 2.5, 0, Math.PI * 2);
+                ctx.arc(leadScreen.x, leadScreen.y, 2.2, 0, Math.PI * 2);
                 ctx.fill();
               }
             }
+            ctx.restore();
+
+            // Aggressively declutter: suppress non-locked callsign labels inside boresight cone or >2.6km
+            if (isCurrentTarget || other.carryingFlag || (!inBoresightCone && !isDistant)) {
+              labelQueue.push({
+                anchorX: screen.x,
+                anchorY: screen.y - boxS - 4,
+                x: screen.x,
+                y: screen.y - boxS - 13,
+                text: other.carryingFlag ? `[FLAG] ${other.callsign}` : other.callsign,
+                subText: distStr,
+                color: other.carryingFlag ? '#d9822b' : (isCurrentTarget ? '#e86862' : '#e2a4a1'),
+                align: 'center',
+                priority: other.carryingFlag ? 5 : (isCurrentTarget ? 4 : 1),
+                distSq: dist * dist
+              });
+            }
           } else if (!isEnemy && (dist < 2200 || other.carryingFlag)) {
-            ctx.strokeStyle = other.carryingFlag ? '#00ff9d' : 'rgba(56, 189, 248, 0.65)';
+            ctx.save();
+            ctx.strokeStyle = other.carryingFlag ? '#52c468' : 'rgba(94, 151, 209, 0.58)';
             ctx.lineWidth = 1.2;
-            ctx.strokeRect(screen.x - 8, screen.y - 8, 16, 16);
+            ctx.strokeRect(screen.x - 7, screen.y - 7, 14, 14);
+            ctx.restore();
+
             if (other.carryingFlag) {
-              ctx.fillStyle = '#00ff9d';
-              ctx.font = 'bold 10px Consolas, monospace';
-              ctx.fillText(`🚩 ESCORT ${other.callsign}`, screen.x - 24, screen.y - 12);
+              labelQueue.push({
+                anchorX: screen.x,
+                anchorY: screen.y - 10,
+                x: screen.x,
+                y: screen.y - 18,
+                text: `ESCORT ${other.callsign}`,
+                subText: distStr,
+                color: '#52c468',
+                align: 'center',
+                priority: 3,
+                distSq: dist * dist
+              });
             }
           }
-        } else if (isEnemy && (isCurrentTarget || other.carryingFlag)) {
-          _v3.copy(other.mesh.position).applyMatrix4(camera.matrixWorldInverse);
-          const angle = Math.atan2(_v3.y, _v3.x);
-          const arrowRadius = Math.min(w, h) * 0.35;
-          const ax = cx + Math.cos(angle) * arrowRadius;
-          const ay = cy - Math.sin(angle) * arrowRadius;
+        } else if (isEnemy && (isCurrentTarget || other.carryingFlag) && !flagCarriedTargets.has(other)) {
+          offscreenQueue.push(
+            this._computeOffscreenChevron(
+              other.mesh.position,
+              camera,
+              cx,
+              cy,
+              w,
+              h,
+              other.carryingFlag ? '#d9822b' : warnColor,
+              other.carryingFlag ? 'CARRIER' : 'TGT',
+              distStr,
+              true
+            )
+          );
+        }
+      }
 
+      // 3. De-conflict & render Offscreen Chevrons cleanly
+      offscreenQueue.sort((a, b) => a.ay - b.ay);
+      for (let i = 1; i < offscreenQueue.length; i++) {
+        const cur = offscreenQueue[i];
+        for (let j = 0; j < i; j++) {
+          const prev = offscreenQueue[j];
+          if (Math.abs(cur.ax - prev.ax) < 120 && Math.abs(cur.ay - prev.ay) < 26) {
+            cur.ay = prev.ay - 26;
+            if (cur.ay < 92) cur.ay = prev.ay + 26;
+          }
+        }
+      }
+      for (const ch of offscreenQueue) {
+        ctx.save();
+        ctx.translate(ch.ax, ch.ay);
+        ctx.rotate(ch.ang);
+        ctx.fillStyle = ch.color;
+        ctx.beginPath();
+        ctx.moveTo(ch.sz, 0);
+        ctx.lineTo(-ch.sz, -ch.sz * 0.65);
+        ctx.lineTo(-ch.sz * 0.48, 0);
+        ctx.lineTo(-ch.sz, ch.sz * 0.65);
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
+
+        if (ch.text) {
+          const lx = ch.ax - ch.dx * 16;
+          const ly = ch.ay - ch.dy * 12;
           ctx.save();
-          ctx.translate(ax, ay);
-          ctx.rotate(-angle);
-          ctx.fillStyle = other.carryingFlag ? '#fbbf24' : warnColor;
-          const sz = other.carryingFlag ? 12 : 9;
-          ctx.beginPath();
-          ctx.moveTo(sz, 0);
-          ctx.lineTo(-sz, -sz * 0.65);
-          ctx.lineTo(-sz * 0.5, 0);
-          ctx.lineTo(-sz, sz * 0.65);
-          ctx.closePath();
-          ctx.fill();
+          ctx.font = '700 9px "Share Tech Mono", monospace';
+          ctx.fillStyle = ch.color;
+          ctx.textAlign = ch.dx > 0.35 ? 'right' : (ch.dx < -0.35 ? 'left' : 'center');
+          ctx.textBaseline = 'middle';
+          ctx.fillText(ch.text, lx, ly);
           ctx.restore();
         }
       }
 
-      // 7. Floating Action Popups
+      // 3. Cap simultaneous floating labels (priority & proximity first) + Screen-Space De-Confliction Pass
+      labelQueue.sort((a, b) => (b.priority - a.priority) || (a.distSq - b.distSq));
+      const cappedLabels = labelQueue.slice(0, 6);
+      cappedLabels.sort((a, b) => a.y - b.y);
+      const minSpacingY = 22;
+      const horizOverlapThresh = 96;
+      for (let i = 1; i < cappedLabels.length; i++) {
+        const cur = cappedLabels[i];
+        for (let j = 0; j < i; j++) {
+          const prev = cappedLabels[j];
+          if (Math.abs(cur.x - prev.x) < horizOverlapThresh) {
+            const needGap = prev.subText ? minSpacingY + 8 : minSpacingY;
+            if (cur.y - prev.y < needGap) {
+              cur.y = prev.y - needGap;
+            }
+          }
+        }
+      }
+
+      ctx.save();
+      ctx.textBaseline = 'middle';
+      for (const lbl of cappedLabels) {
+        ctx.textAlign = lbl.align;
+        ctx.font = '700 10.5px "Chakra Petch", sans-serif';
+        ctx.fillStyle = lbl.color;
+        ctx.fillText(lbl.text, lbl.x, lbl.y);
+        if (lbl.subText) {
+          ctx.font = '600 9px "Share Tech Mono", monospace';
+          ctx.fillStyle = 'rgba(234, 231, 223, 0.72)';
+          ctx.fillText(lbl.subText, lbl.x, lbl.y + 11);
+        }
+      }
+      ctx.restore();
+    }
+
+    renderCenterPopupsAndWarnings(ctx, dt, cx, cy, ac, aglM, warnColor) {
+      ctx.save();
       ctx.textAlign = 'center';
       let popY = cy - 95;
       for (let i = this.popups.length - 1; i >= 0; i--) {
@@ -482,652 +936,199 @@
         const alpha = Math.min(1, (1 - p.age / p.life) * 1.5);
         ctx.save();
         ctx.globalAlpha = alpha;
-        ctx.font = 'bold 16px Consolas, monospace';
+        ctx.font = '700 14px "Share Tech Mono", monospace';
         ctx.fillStyle = p.color;
-        ctx.fillText(p.text, cx, popY - p.age * 18);
+        ctx.fillText(p.text, cx, popY - p.age * 16);
         ctx.restore();
-        popY -= 22;
+        popY -= 20;
       }
 
-      // 8. Carrying Flag Banner Alert (With [G] / [X] TO DROP FLAG Prompt!)
-      const blink = Math.floor(performance.now() / 200) % 2 === 0;
+      const blink = Math.floor(performance.now() / 220) % 2 === 0;
       if (ac.carryingFlag) {
-        ctx.fillStyle = blink ? '#fbbf24' : '#00ff9d';
-        ctx.font = isMobile ? 'bold 12px Consolas, monospace' : 'bold 16px Consolas, monospace';
-        const dropPrompt = isMobile ? 'FLY HOME TO CAPTURE' : 'FLY HOME TO CAPTURE • PRESS [G] OR [X] TO DROP FLAG';
-        ctx.fillText(`🚩 CARRYING ENEMY FLAG! ${dropPrompt} 🚩`, cx, isMobile ? 64 : 104);
+        ctx.fillStyle = blink ? '#d9822b' : '#52c468';
+        ctx.font = '700 12.5px "Share Tech Mono", monospace';
+        ctx.fillText('CARRYING ENEMY FLAG — RETURN TO HOME RUNWAY  ([G] / [X] DROP)', cx, 88);
       }
 
-      const bottomWarnY = isMobile ? (h - 24) : (cy + 150);
+      const bottomWarnY = cy + 148;
       if (ac.flight.autopilotOverride && blink) {
         ctx.fillStyle = warnColor;
-        ctx.font = 'bold 15px Consolas, monospace';
-        ctx.fillText('⚠ LEAVING SECTOR - AUTOPILOT RETURNING ⚠', cx, bottomWarnY - 24);
+        ctx.font = '700 12.5px "Share Tech Mono", monospace';
+        ctx.fillText('LEAVING SECTOR — AUTOPILOT ENGAGED', cx, bottomWarnY - 22);
       } else if (ac.flight.outOfBoundsWarning && blink) {
-        ctx.fillStyle = '#fbbf24';
-        ctx.font = 'bold 15px Consolas, monospace';
-        ctx.fillText('⚠ SECTOR BOUNDARY AHEAD - TURN BACK ⚠', cx, bottomWarnY - 24);
+        ctx.fillStyle = '#d9822b';
+        ctx.font = '700 12.5px "Share Tech Mono", monospace';
+        ctx.fillText('SECTOR BOUNDARY AHEAD — REVERSE HEADING', cx, bottomWarnY - 22);
       }
       if (ac.flight.isStalling && blink) {
         ctx.fillStyle = warnColor;
-        ctx.font = 'bold 15px Consolas, monospace';
-        ctx.fillText('⚠ STALL - PRESS [W] OR [SHIFT] BOOST ⚠', cx, bottomWarnY);
+        ctx.font = '700 12.5px "Share Tech Mono", monospace';
+        ctx.fillText('STALL WARNING — THROTTLE [W] OR AFTERBURNER [SHIFT]', cx, bottomWarnY);
       } else if (aglM < 85 && blink) {
         ctx.fillStyle = warnColor;
-        ctx.font = 'bold 15px Consolas, monospace';
-        ctx.fillText(`⚠ LOW ALTITUDE (${aglM}m AGL) ⚠`, cx, bottomWarnY);
+        ctx.font = '700 12.5px "Share Tech Mono", monospace';
+        ctx.fillText(`PULL UP — ${aglM}M AGL`, cx, bottomWarnY);
       }
-      ctx.textAlign = 'left';
-
-      // 9. Circular CTF Radar
-      this.renderRadar(ctx, ac, allAircraft, world, w, h, headingDeg, isMobile);
-
       ctx.restore();
     }
 
-    renderCtfTopBanner(ctx, cx, teamCaptures, flags, ac, isMobile, remainingMatchSec = 600, isSuddenDeath = false) {
+    renderAvionicsBlock(ctx, w, h, ac, altM, aglM, pal) {
       ctx.save();
-      const bw = isMobile ? 310 : 480;
-      const bh = isMobile ? 38 : 50;
-      const bx = cx - bw * 0.5;
-      const by = 8;
+      const boxW = 252;
+      const boxH = 142;
+      const bx = w - boxW - 20;
+      const by = h - boxH - 18;
 
-      ctx.fillStyle = 'rgba(6, 14, 28, 0.88)';
-      if (isSuddenDeath) {
-        ctx.strokeStyle = ((Math.floor(performance.now() / 200) % 2 === 0) ? '#fbbf24' : '#ef4444');
-        ctx.lineWidth = 2.4;
-      } else {
-        ctx.strokeStyle = remainingMatchSec < 60 ? 'rgba(255, 59, 71, 0.75)' : 'rgba(56, 189, 248, 0.50)';
-        ctx.lineWidth = 1.6;
-      }
-      ctx.fillRect(bx, by, bw, bh);
-      ctx.strokeRect(bx, by, bw, bh);
+      const accentCol = pal ? pal.main : '#52c468';
+      const isBoosting = ac.flight.isBoosting;
+      const isAirBraking = ac.flight.isAirBraking;
+      const isOverdrive = ac.overdriveTimer > 0;
+      const hpRatio = Math.max(0, Math.min(1.0, ac.hp / ac.maxHp));
+      const maxBoost = ac.maxBoostEnergy || CONFIG.BOOST.maxEnergy;
+      const boostRatio = Math.max(0, Math.min(1.0, ac.boostEnergy / maxBoost));
+      const ovdRatio = isOverdrive
+        ? Math.max(0, Math.min(1.0, ac.overdriveTimer / 7.0))
+        : Math.max(0, Math.min(1.0, (ac.overdriveMeter || 0) / 100));
+      const isLowHp = ac.hp <= 30;
+      const isMedHp = ac.hp <= 55;
+      const blink = Math.floor(performance.now() / 190) % 2 === 0;
+      const hpColor = isLowHp ? '#c9443e' : (isMedHp ? '#d9822b' : accentCol);
 
-      const capGoal = CONFIG.CTF.capturesToWin;
-      const makePips = (count) => {
-        let s = '';
-        for (let i = 0; i < capGoal; i++) s += (i < count ? '●' : '○');
-        return s;
-      };
+      // Matte MFD Chassis
+      ctx.fillStyle = 'rgba(12, 14, 17, 0.88)';
+      ctx.fillRect(bx, by, boxW, boxH);
+      ctx.strokeStyle = isLowHp && blink ? '#c9443e' : 'rgba(234, 231, 223, 0.20)';
+      ctx.lineWidth = 1.2;
+      ctx.strokeRect(bx, by, boxW, boxH);
 
-      const describeFlag = (f) => {
-        if (!f) return 'HOME';
-        if (f.state === 'AT_BASE') return 'AT BASE';
-        if (f.state === 'DROPPED') return `DROPPED (${Math.ceil(f.dropTimer)}s)`;
-        if (f.state === 'CARRIED' && f.carrier) return `CARRIED BY ${f.carrier.callsign.slice(0, 9)}`;
-        return 'ACTIVE';
-      };
+      // Left tactical accent bar
+      ctx.fillStyle = isOverdrive || isBoosting ? '#d9822b' : accentCol;
+      ctx.fillRect(bx, by, 3, boxH);
 
-      ctx.font = isMobile ? 'bold 12px Consolas, monospace' : 'bold 14px Consolas, monospace';
-      ctx.fillStyle = '#38bdf8';
-      ctx.textAlign = 'left';
-      ctx.fillText(`BLUE ${teamCaptures.BLUE}/${capGoal} ${makePips(teamCaptures.BLUE)}`, bx + 12, by + (isMobile ? 15 : 19));
-
-      ctx.fillStyle = '#ff4757';
-      ctx.textAlign = 'right';
-      ctx.fillText(`${makePips(teamCaptures.RED)} ${teamCaptures.RED}/${capGoal} RED`, bx + bw - 12, by + (isMobile ? 15 : 19));
-
-      // Center Clock or Sudden Death Banner
-      ctx.textAlign = 'center';
-      if (isSuddenDeath) {
-        ctx.fillStyle = (Math.floor(performance.now() / 200) % 2 === 0) ? '#fbbf24' : '#ffffff';
-        ctx.font = isMobile ? 'bold 10px Consolas, monospace' : 'bold 12.5px Consolas, monospace';
-        ctx.fillText(`⚡ SUDDEN DEATH: GOLDEN CAP!`, cx, by + (isMobile ? 15 : 19));
-      } else {
-        const clockStr = HUDRenderer.formatClock(remainingMatchSec);
-        ctx.fillStyle = remainingMatchSec < 60
-          ? ((Math.floor(performance.now() / 250) % 2 === 0) ? '#ff3b47' : '#ffffff')
-          : (remainingMatchSec < 180 ? '#fbbf24' : '#00ff9d');
-        ctx.font = isMobile ? 'bold 11px Consolas, monospace' : 'bold 13px Consolas, monospace';
-        ctx.fillText(`⏱ ${clockStr} • FIRST TO ${capGoal}`, cx, by + (isMobile ? 15 : 19));
-      }
-
-      ctx.font = isMobile ? '9px Consolas, monospace' : '10.5px Consolas, monospace';
-      ctx.fillStyle = '#7dd3fc';
-      ctx.textAlign = 'left';
-      ctx.fillText(`🚩 ${describeFlag(flags.BLUE)}`, bx + 12, by + (isMobile ? 30 : 38));
-
-      ctx.fillStyle = '#fda4af';
-      ctx.textAlign = 'right';
-      ctx.fillText(`${describeFlag(flags.RED)} 🚩`, bx + bw - 12, by + (isMobile ? 30 : 38));
-
-      ctx.restore();
-    }
-
-    renderFpsCounter(ctx) {
-      ctx.save();
-      ctx.font = '700 16px "Orbitron", Consolas, monospace';
-      ctx.fillStyle = '#00ff9d';
+      // Primary Speed Readout
+      const speedKmh = Math.round(ac.flight.speed);
+      const thrPct = Math.round((ac.flight.throttle || 0) * 100);
+      const gLoad = (ac.flight.gForce || 1.0).toFixed(1);
       ctx.textAlign = 'left';
       ctx.textBaseline = 'top';
-      ctx.fillText(`${Math.round(this.fps || 60)}`, 18, 16);
-      ctx.restore();
-    }
+      ctx.font = '700 9px "Share Tech Mono", monospace';
+      ctx.fillStyle = '#9a9e9f';
+      ctx.fillText('AIRSPEED', bx + 14, by + 10);
 
-    renderDualTeamRosters(ctx, w, h, allAircraft, playerAc) {
-      ctx.save();
-      const getPilotLevel = (p) => {
-        if (p.isPlayer) {
-          const xp = (window.airCombatSim && window.airCombatSim.career) ? window.airCombatSim.career.xp : 2400;
-          return Math.min(250, Math.floor(xp / 280) + 1);
-        }
-        let hash = 0;
-        for (let i = 0; i < p.callsign.length; i++) hash = (hash * 31 + p.callsign.charCodeAt(i)) & 0xffff;
-        return 40 + (hash % 195);
-      };
+      ctx.font = '700 26px "Share Tech Mono", monospace';
+      ctx.fillStyle = isBoosting ? '#d9822b' : '#eae7df';
+      ctx.fillText(`${speedKmh}`, bx + 14, by + 21);
 
-      const redPilots = allAircraft.filter(a => a.team === 'RED').sort((a, b) => b.score - a.score);
-      const bluePilots = allAircraft.filter(a => a.team === 'BLUE').sort((a, b) => b.score - a.score);
-      const blink = Math.floor(performance.now() / 250) % 2 === 0;
+      ctx.font = '600 9px "Share Tech Mono", monospace';
+      ctx.fillStyle = '#9a9e9f';
+      ctx.fillText('KM/H', bx + 74, by + 32);
 
-      // 1. Red Squadron Roster (Top-Left, below FPS)
-      const leftX = 18;
-      let leftY = 46;
-      for (let i = 0; i < redPilots.length; i++) {
-        const p = redPilots[i];
-        const isSelf = p === playerAc;
-        const isDead = !p.alive;
-        const hasFlag = p.carryingFlag;
+      // Compact Throttle & G-Force Sub-Telemetry
+      ctx.font = '600 9px "Share Tech Mono", monospace';
+      ctx.fillStyle = isAirBraking ? '#d9822b' : 'rgba(234, 231, 223, 0.62)';
+      ctx.fillText(isAirBraking ? `AIRBRK ${gLoad}G` : `THR ${thrPct}% · ${gLoad}G`, bx + 14, by + 48);
 
-        ctx.textAlign = 'left';
-        ctx.textBaseline = 'top';
-
-        // Pilot Callsign
-        ctx.font = isSelf ? '800 13px "Orbitron", Consolas, monospace' : '700 12px "Orbitron", Consolas, monospace';
-        if (isDead) {
-          ctx.fillStyle = 'rgba(255, 71, 87, 0.42)';
-        } else if (isSelf) {
-          ctx.fillStyle = '#00ff9d';
-        } else {
-          ctx.fillStyle = hasFlag ? (blink ? '#fbbf24' : '#ff4757') : '#ff4757';
-        }
-
-        const flagPrefix = hasFlag ? '🚩 ' : '';
-        const deadSuffix = isDead ? ` [DOWN ${Math.ceil(p.respawnTimer)}s]` : '';
-        ctx.fillText(`${flagPrefix}${p.callsign}${deadSuffix}`, leftX, leftY);
-
-        // Pilot Stats: K: X  F: Y  Lvl: Z
-        ctx.font = '600 10px "Exo 2", Consolas, monospace';
-        ctx.fillStyle = isDead ? 'rgba(254, 205, 211, 0.35)' : '#fda4af';
-        ctx.fillText(`K: ${p.kills}  F: ${p.flagCaptures}  Lvl: ${getPilotLevel(p)}`, leftX, leftY + 14);
-
-        leftY += 30;
-      }
-
-      // 2. Blue Squadron Roster (Top-Right)
-      const rightX = w - 18;
-      let rightY = 46;
-      for (let i = 0; i < bluePilots.length; i++) {
-        const p = bluePilots[i];
-        const isSelf = p === playerAc;
-        const isDead = !p.alive;
-        const hasFlag = p.carryingFlag;
-
-        ctx.textAlign = 'right';
-        ctx.textBaseline = 'top';
-
-        // Pilot Callsign
-        ctx.font = isSelf ? '800 13px "Orbitron", Consolas, monospace' : '700 12px "Orbitron", Consolas, monospace';
-        if (isDead) {
-          ctx.fillStyle = 'rgba(56, 189, 248, 0.42)';
-        } else if (isSelf) {
-          ctx.fillStyle = '#00ff9d';
-        } else {
-          ctx.fillStyle = hasFlag ? (blink ? '#fbbf24' : '#38bdf8') : '#38bdf8';
-        }
-
-        const flagPrefix = hasFlag ? '🚩 ' : '';
-        const deadSuffix = isDead ? ` [DOWN ${Math.ceil(p.respawnTimer)}s]` : '';
-        ctx.fillText(`${flagPrefix}${p.callsign}${deadSuffix}`, rightX, rightY);
-
-        // Pilot Stats: K: X  F: Y  Lvl: Z
-        ctx.font = '600 10px "Exo 2", Consolas, monospace';
-        ctx.fillStyle = isDead ? 'rgba(186, 230, 253, 0.35)' : '#bae6fd';
-        ctx.fillText(`K: ${p.kills}  F: ${p.flagCaptures}  Lvl: ${getPilotLevel(p)}`, rightX, rightY + 14);
-
-        rightY += 30;
-      }
-
-      ctx.restore();
-    }
-
-    renderBottomCenterHealthBar(ctx, cx, h, ac) {
-      ctx.save();
-      const barW = Math.min(380, this.logicalW * 0.40);
-      const barH = 15;
-      const halfW = barW * 0.5;
-      const bx = cx - halfW;
-      const by = h - 22;
-
-      const hpRatio = Math.max(0, Math.min(1.0, ac.hp / ac.maxHp));
-      const isDamagedRecently = ac.timeSinceDamage < 0.4;
-      const isLowHp = ac.hp <= 30;
-      const blink = Math.floor(performance.now() / 180) % 2 === 0;
-
-      // 1. Futuristic Beveled Chassis
-      ctx.fillStyle = 'rgba(4, 9, 20, 0.88)';
-      ctx.strokeStyle = isLowHp && blink ? '#ff3b47' : 'rgba(56, 189, 248, 0.45)';
-      ctx.lineWidth = 1.6;
-
-      ctx.beginPath();
-      ctx.moveTo(bx - 14, by + barH * 0.5);
-      ctx.lineTo(bx - 4, by - 4);
-      ctx.lineTo(bx + barW + 4, by - 4);
-      ctx.lineTo(bx + barW + 14, by + barH * 0.5);
-      ctx.lineTo(bx + barW + 4, by + barH + 4);
-      ctx.lineTo(bx - 4, by + barH + 4);
-      ctx.closePath();
-      ctx.fill();
-      ctx.stroke();
-
-      // Side wing bracket accent notches
-      ctx.fillStyle = isLowHp ? '#ff3b47' : '#00ff9d';
-      ctx.fillRect(bx - 12, by + 4, 3, barH - 8);
-      ctx.fillRect(bx + barW + 9, by + 4, 3, barH - 8);
-
-      // 2. Interior Health Bar Track (Empty Background)
-      ctx.fillStyle = 'rgba(12, 18, 30, 0.95)';
-      ctx.fillRect(bx, by, barW, barH);
-
-      // Subtle track grid lines on empty segments
-      ctx.strokeStyle = 'rgba(56, 189, 248, 0.08)';
-      ctx.lineWidth = 1;
-      for (let i = 1; i <= 9; i++) {
-        const sx = bx + barW * (i / 10);
-        ctx.beginPath();
-        ctx.moveTo(sx, by);
-        ctx.lineTo(sx, by + barH);
-        ctx.stroke();
-      }
-
-      // 3. Double-Sided Active Health Fill (Draining symmetrically from both outer ends inward)
-      const currentHalfFill = halfW * hpRatio;
-      if (currentHalfFill > 0.5) {
-        // Left Wing Fill: fills from (cx - currentHalfFill) to cx
-        const leftGrad = ctx.createLinearGradient(cx - currentHalfFill, by, cx, by);
-        if (isLowHp) {
-          leftGrad.addColorStop(0, '#ea580c');
-          leftGrad.addColorStop(1, '#ff3b47');
-        } else {
-          leftGrad.addColorStop(0, '#0284c7');
-          leftGrad.addColorStop(0.65, '#38bdf8');
-          leftGrad.addColorStop(1, '#00ff9d');
-        }
-
-        ctx.fillStyle = isDamagedRecently ? '#ffffff' : leftGrad;
-        ctx.fillRect(cx - currentHalfFill, by, currentHalfFill, barH);
-
-        // Right Wing Fill: fills from cx to (cx + currentHalfFill)
-        const rightGrad = ctx.createLinearGradient(cx, by, cx + currentHalfFill, by);
-        if (isLowHp) {
-          rightGrad.addColorStop(0, '#ff3b47');
-          rightGrad.addColorStop(1, '#ea580c');
-        } else {
-          rightGrad.addColorStop(0, '#00ff9d');
-          rightGrad.addColorStop(0.35, '#38bdf8');
-          rightGrad.addColorStop(1, '#0284c7');
-        }
-
-        ctx.fillStyle = isDamagedRecently ? '#ffffff' : rightGrad;
-        ctx.fillRect(cx, by, currentHalfFill, barH);
-
-        // Mirrored Segment Dividers across active fill
-        ctx.strokeStyle = 'rgba(4, 9, 20, 0.65)';
-        ctx.lineWidth = 1.2;
-        for (let i = 1; i <= 4; i++) {
-          const offset = halfW * (i / 5);
-          if (offset < currentHalfFill) {
-            // Left divider
-            ctx.beginPath();
-            ctx.moveTo(cx - offset, by);
-            ctx.lineTo(cx - offset, by + barH);
-            ctx.stroke();
-
-            // Right divider
-            ctx.beginPath();
-            ctx.moveTo(cx + offset, by);
-            ctx.lineTo(cx + offset, by + barH);
-            ctx.stroke();
-          }
-        }
-      }
-
-      // 4. Center Spine Divider & Notches (Zero text in the middle of the bar)
-      ctx.strokeStyle = isLowHp && blink ? '#ff3b47' : 'rgba(56, 189, 248, 0.75)';
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.moveTo(cx, by - 3);
-      ctx.lineTo(cx, by + barH + 3);
-      ctx.stroke();
-
-      // High-tech micro indicator pips on top & bottom center
-      ctx.fillStyle = isLowHp ? '#ff3b47' : '#00ff9d';
-      ctx.beginPath();
-      ctx.moveTo(cx - 3, by - 3);
-      ctx.lineTo(cx + 3, by - 3);
-      ctx.lineTo(cx, by - 6);
-      ctx.closePath();
-      ctx.fill();
-
-      ctx.beginPath();
-      ctx.moveTo(cx - 3, by + barH + 3);
-      ctx.lineTo(cx + 3, by + barH + 3);
-      ctx.lineTo(cx, by + barH + 6);
-      ctx.closePath();
-      ctx.fill();
-
-      // Left numeric readout (speed in KM/H)
+      // Explicit Labeled ALT & AGL Column
       ctx.textAlign = 'right';
-      ctx.textBaseline = 'middle';
-      ctx.font = '600 11px "Orbitron", monospace';
-      ctx.fillStyle = '#94a3b8';
-      ctx.fillText(`${Math.round(ac.flight.speed)}`, bx - 22, by + barH * 0.5);
+      ctx.font = '600 10px "Share Tech Mono", monospace';
+      ctx.fillStyle = '#9a9e9f';
+      ctx.fillText('ALT', bx + boxW - 58, by + 12);
+      ctx.fillStyle = '#eae7df';
+      ctx.fillText(`${altM}m`, bx + boxW - 14, by + 12);
 
-      // Right numeric readout (HP)
+      ctx.fillStyle = aglM < 90 ? '#c9443e' : '#9a9e9f';
+      ctx.fillText('AGL', bx + boxW - 58, by + 29);
+      ctx.fillStyle = aglM < 90 ? '#c9443e' : (aglM < 160 ? '#d9822b' : '#eae7df');
+      ctx.fillText(`${aglM}m`, bx + boxW - 14, by + 29);
+
+      // Divider
+      ctx.fillStyle = 'rgba(234, 231, 223, 0.10)';
+      ctx.fillRect(bx + 14, by + 62, boxW - 28, 1);
+
+      // Afterburner Fuel Bar
+      const barW = boxW - 28;
+      const abState = isBoosting ? 'ENGAGED' : `${Math.round(boostRatio * 100)}%`;
+      const abCol = isBoosting ? '#d9822b' : '#eae7df';
       ctx.textAlign = 'left';
-      ctx.textBaseline = 'middle';
-      ctx.font = '700 11px "Orbitron", monospace';
-      ctx.fillStyle = isLowHp ? (blink ? '#ff3b47' : '#ffffff') : '#00ff9d';
-      ctx.fillText(`${Math.ceil(ac.hp)} HP`, bx + barW + 22, by + barH * 0.5);
-
-      // Slow Regen Indicator (Displayed subtly on right flank above HP when active)
-      if (ac.hp < ac.maxHp) {
-        const isRegen = ac.timeSinceDamage >= CONFIG.REGEN.regenDelay;
-        ctx.textAlign = 'left';
-        ctx.font = '600 9px "Orbitron", monospace';
-        ctx.fillStyle = isRegen ? '#00ff9d' : '#fbbf24';
-        const waitSec = Math.max(0, CONFIG.REGEN.regenDelay - ac.timeSinceDamage).toFixed(1);
-        ctx.fillText(isRegen ? '⚡ REGEN' : `+${waitSec}s`, bx + barW + 22, by - 8);
-      }
-
-      ctx.restore();
-    }
-
-    renderSpeedometerAndBoostTube(ctx, w, h, ac, altM, aglM, isMobile) {
-      ctx.save();
-      const speedKmh = Math.round(ac.flight.speed);
-      const maxSpd = (ac.stats.boostMaxSpeed || 655);
-      const speedFrac = Math.max(0, Math.min(1.0, (speedKmh - 60) / (maxSpd - 60)));
-
-      // Coordinates
-      const dialR = isMobile ? 48 : 62;
-      const dialCx = w - (isMobile ? 80 : 115);
-      const dialCy = h - (isMobile ? 75 : 90);
-
-      // 1. Outer Metallic Bezel Ring
-      const bgGrad = ctx.createRadialGradient(dialCx, dialCy, dialR * 0.2, dialCx, dialCy, dialR);
-      bgGrad.addColorStop(0, 'rgba(12, 18, 30, 0.94)');
-      bgGrad.addColorStop(0.85, 'rgba(6, 10, 20, 0.96)');
-      bgGrad.addColorStop(1, 'rgba(30, 41, 59, 0.98)');
-
-      ctx.fillStyle = bgGrad;
-      ctx.beginPath();
-      ctx.arc(dialCx, dialCy, dialR, 0, Math.PI * 2);
-      ctx.fill();
-
-      // Outer bezel trim
-      ctx.strokeStyle = 'rgba(148, 163, 184, 0.45)';
-      ctx.lineWidth = 3.5;
-      ctx.stroke();
-
-      // Inner thin rim
-      ctx.strokeStyle = 'rgba(56, 189, 248, 0.35)';
-      ctx.lineWidth = 1.2;
-      ctx.beginPath();
-      ctx.arc(dialCx, dialCy, dialR - 4, 0, Math.PI * 2);
-      ctx.stroke();
-
-      // 2. Speed Gauge Arc (from 135 deg to 405 deg)
-      const startAngle = Math.PI * 0.75;
-      const totalAngle = Math.PI * 1.5;
-      const endAngle = startAngle + totalAngle;
-      const curAngle = startAngle + speedFrac * totalAngle;
-
-      // Arc background track
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.12)';
-      ctx.lineWidth = 6;
-      ctx.beginPath();
-      ctx.arc(dialCx, dialCy, dialR - 9, startAngle, endAngle);
-      ctx.stroke();
-
-      // Active speed arc (orange / red / flame)
-      const isBoosting = ac.flight.isBoosting;
-      const arcGrad = ctx.createLinearGradient(
-        dialCx - dialR, dialCy,
-        dialCx + dialR, dialCy
-      );
-      if (isBoosting) {
-        arcGrad.addColorStop(0, '#fbbf24');
-        arcGrad.addColorStop(0.5, '#f97316');
-        arcGrad.addColorStop(1, '#ef4444');
-      } else {
-        arcGrad.addColorStop(0, '#38bdf8');
-        arcGrad.addColorStop(0.6, '#f97316');
-        arcGrad.addColorStop(1, '#ef4444');
-      }
-      ctx.strokeStyle = arcGrad;
-      ctx.lineWidth = 6;
-      ctx.beginPath();
-      ctx.arc(dialCx, dialCy, dialR - 9, startAngle, curAngle);
-      ctx.stroke();
-
-      // Tick marks along the dial
-      ctx.save();
-      ctx.translate(dialCx, dialCy);
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.35)';
-      ctx.lineWidth = 1.2;
-      for (let i = 0; i <= 18; i++) {
-        const ang = startAngle + (i / 18) * totalAngle;
-        const r1 = dialR - 14;
-        const r2 = dialR - (i % 3 === 0 ? 19 : 16);
-        ctx.beginPath();
-        ctx.moveTo(Math.cos(ang) * r1, Math.sin(ang) * r1);
-        ctx.lineTo(Math.cos(ang) * r2, Math.sin(ang) * r2);
-        ctx.stroke();
-      }
-      ctx.restore();
-
-      // 3. Embedded Top Readout: ALT (matching 614 in reference)
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.font = '700 10px "Orbitron", monospace';
-      ctx.fillStyle = '#38bdf8';
-      ctx.fillText(`${altM}`, dialCx, dialCy - dialR + 24);
-
-      // 4. Center Bold Digital Speed Number (e.g. 618)
-      ctx.font = isMobile ? '800 22px "Orbitron", sans-serif' : '800 28px "Orbitron", sans-serif';
-      ctx.fillStyle = isBoosting ? '#fbbf24' : '#ffffff';
-      ctx.fillText(`${speedKmh}`, dialCx, dialCy + 3);
-
-      ctx.font = '600 8.5px "Orbitron", monospace';
-      ctx.fillStyle = isBoosting ? '#fbbf24' : '#94a3b8';
-      ctx.fillText(isBoosting ? 'NITRO' : 'KM/H', dialCx, dialCy + 16);
-
-      // 5. Embedded Bottom Readout: AGL (matching 739 in reference)
-      ctx.font = '700 9.5px "Orbitron", monospace';
-      ctx.fillStyle = aglM < 90 ? '#ff3b47' : 'rgba(203, 213, 225, 0.85)';
-      ctx.fillText(`${aglM}`, dialCx, dialCy + dialR - 18);
-
-      // 6. Upgraded Curved Outer Halo Boost Energy Arc (Wrapping over top of dial)
-      const haloR = dialR + (isMobile ? 7 : 9);
-      const bStartAngle = Math.PI * 1.12; // ~201 degrees (top-left)
-      const bEndAngle = Math.PI * 1.88;   // ~339 degrees (top-right)
-      const bTotalAngle = bEndAngle - bStartAngle;
-
-      const boostRatio = Math.max(0, Math.min(1.0, ac.boostEnergy / CONFIG.BOOST.maxEnergy));
-      const isOverdrive = ac.overdriveTimer > 0;
-      const bCurAngle = bStartAngle + boostRatio * bTotalAngle;
-
-      // Halo Arc Track (Dark Glass Chassis)
-      ctx.save();
-      ctx.lineCap = 'round';
-
-      // Outer bezel trim track
-      ctx.strokeStyle = 'rgba(15, 23, 42, 0.88)';
-      ctx.lineWidth = isMobile ? 8 : 10;
-      ctx.beginPath();
-      ctx.arc(dialCx, dialCy, haloR, bStartAngle, bEndAngle);
-      ctx.stroke();
-
-      ctx.strokeStyle = 'rgba(56, 189, 248, 0.22)';
-      ctx.lineWidth = 1.2;
-      ctx.beginPath();
-      ctx.arc(dialCx, dialCy, haloR + (isMobile ? 4.5 : 5.5), bStartAngle, bEndAngle);
-      ctx.stroke();
-
-      // Active Energy Flame Gradient Fill
-      if (boostRatio > 0.01) {
-        const boostGrad = ctx.createLinearGradient(
-          dialCx - haloR, dialCy - haloR,
-          dialCx + haloR, dialCy - haloR
-        );
-
-        if (isOverdrive) {
-          boostGrad.addColorStop(0, '#fef08a');
-          boostGrad.addColorStop(0.4, '#fbbf24');
-          boostGrad.addColorStop(0.8, '#f97316');
-          boostGrad.addColorStop(1, '#ef4444');
-          ctx.shadowColor = '#fbbf24';
-          ctx.shadowBlur = 14;
-        } else if (isBoosting) {
-          // Dynamic pulsing flame while boosting
-          const pulse = Math.sin(performance.now() * 0.02) * 0.15;
-          boostGrad.addColorStop(0, '#ffffff');
-          boostGrad.addColorStop(0.25 + pulse, '#38bdf8');
-          boostGrad.addColorStop(0.7, '#00ff9d');
-          boostGrad.addColorStop(1, '#f59e0b');
-          ctx.shadowColor = '#00ff9d';
-          ctx.shadowBlur = 16;
-        } else {
-          // Normal idle/recharging cyan/emerald energy
-          boostGrad.addColorStop(0, '#00ff9d');
-          boostGrad.addColorStop(0.55, '#38bdf8');
-          boostGrad.addColorStop(1, '#0284c7');
-          ctx.shadowColor = '#38bdf8';
-          ctx.shadowBlur = 8;
-        }
-
-        ctx.strokeStyle = boostGrad;
-        ctx.lineWidth = isMobile ? 6 : 7.5;
-        ctx.beginPath();
-        ctx.arc(dialCx, dialCy, haloR, bStartAngle, bCurAngle);
-        ctx.stroke();
-        ctx.shadowBlur = 0;
-
-        // Energy Gradation Ticks along Halo Arc
-        ctx.strokeStyle = 'rgba(15, 23, 42, 0.7)';
-        ctx.lineWidth = 1.5;
-        for (let i = 1; i <= 8; i++) {
-          const segAng = bStartAngle + (i / 9) * bTotalAngle;
-          if (segAng < bCurAngle) {
-            const r1 = haloR - (isMobile ? 3 : 4);
-            const r2 = haloR + (isMobile ? 3 : 4);
-            ctx.beginPath();
-            ctx.moveTo(dialCx + Math.cos(segAng) * r1, dialCy + Math.sin(segAng) * r1);
-            ctx.lineTo(dialCx + Math.cos(segAng) * r2, dialCy + Math.sin(segAng) * r2);
-            ctx.stroke();
-          }
-        }
-      }
-
-      // Halo Boost Status Text (Right above apex of halo arc)
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'bottom';
-      ctx.font = '700 8.5px "Orbitron", monospace';
-      if (isOverdrive) {
-        ctx.fillStyle = '#fbbf24';
-        ctx.fillText('⚡ OVERDRIVE ACTIVE', dialCx, dialCy - haloR - 4);
-      } else if (isBoosting) {
-        ctx.fillStyle = '#00ff9d';
-        ctx.fillText('🔥 AFTERBURNER BOOST', dialCx, dialCy - haloR - 4);
-      } else if (boostRatio < 0.98) {
-        ctx.fillStyle = 'rgba(56, 189, 248, 0.75)';
-        ctx.fillText('NITRO ' + Math.round(boostRatio * 100) + '%', dialCx, dialCy - haloR - 4);
-      } else {
-        ctx.fillStyle = 'rgba(0, 255, 157, 0.65)';
-        ctx.fillText('NITRO READY', dialCx, dialCy - haloR - 4);
-      }
-
-      ctx.restore();
-
-      // Small version / ping label in bottom right corner (matching 63 / v155)
-      ctx.font = '700 9px "Orbitron", monospace';
-      ctx.fillStyle = 'rgba(148, 163, 184, 0.55)';
+      ctx.font = '600 9px "Share Tech Mono", monospace';
+      ctx.fillStyle = '#9a9e9f';
+      ctx.fillText('AFTERBURNER', bx + 14, by + 69);
       ctx.textAlign = 'right';
-      ctx.textBaseline = 'bottom';
-      ctx.fillText(`v2.0`, w - 12, h - 6);
+      ctx.fillStyle = abCol;
+      ctx.fillText(abState, bx + boxW - 14, by + 69);
+
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.09)';
+      ctx.fillRect(bx + 14, by + 80, barW, 4);
+      ctx.fillStyle = isBoosting ? '#d9822b' : '#9a9e9f';
+      ctx.fillRect(bx + 14, by + 80, barW * boostRatio, 4);
+
+      // Overdrive / Combo Gauge
+      const ovdLbl = isOverdrive
+        ? `ACTIVE ${ac.overdriveTimer.toFixed(1)}S`
+        : `${Math.round(ovdRatio * 100)}% · x${ac.comboCount || 1}`;
+      ctx.textAlign = 'left';
+      ctx.fillStyle = '#9a9e9f';
+      ctx.fillText('OVERDRIVE', bx + 14, by + 90);
+      ctx.textAlign = 'right';
+      ctx.fillStyle = isOverdrive ? (blink ? '#f0d284' : '#d9822b') : 'rgba(234, 231, 223, 0.72)';
+      ctx.fillText(ovdLbl, bx + boxW - 14, by + 90);
+
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.09)';
+      ctx.fillRect(bx + 14, by + 101, barW, 4);
+      ctx.fillStyle = isOverdrive ? '#f0d284' : '#d9822b';
+      ctx.fillRect(bx + 14, by + 101, barW * ovdRatio, 4);
+
+      // Airframe Hull Integrity Bar
+      let hullStatus = `${Math.ceil(ac.hp)}/${Math.round(ac.maxHp)}`;
+      if (ac.hp < ac.maxHp && ac.timeSinceDamage >= CONFIG.REGEN.regenDelay) {
+        hullStatus = `${Math.ceil(ac.hp)}/${Math.round(ac.maxHp)} REGEN`;
+      }
+      ctx.textAlign = 'left';
+      ctx.fillStyle = '#9a9e9f';
+      ctx.fillText('HULL INTEGRITY', bx + 14, by + 112);
+      ctx.textAlign = 'right';
+      ctx.fillStyle = isLowHp && blink ? '#c9443e' : hpColor;
+      ctx.fillText(hullStatus, bx + boxW - 14, by + 112);
+
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.09)';
+      ctx.fillRect(bx + 14, by + 124, barW, 6);
+      ctx.fillStyle = ac.timeSinceDamage < 0.35 ? '#eae7df' : hpColor;
+      ctx.fillRect(bx + 14, by + 124, barW * hpRatio, 6);
 
       ctx.restore();
     }
 
-    renderFlagMarkers3D(ctx, ac, flags, camera, w, h) {
-      if (!flags) return;
-      for (const key of ['BLUE', 'RED']) {
-        const f = flags[key];
-        if (!f || f.carrier === ac) continue;
-
-        _v1.copy(f.pos).add(new THREE.Vector3(0, 65, 0));
-        const scr = this.projectToScreen(_v1, camera, w, h);
-        const dist = Math.round(ac.mesh.position.distanceTo(f.pos));
-        const col = key === 'BLUE' ? '#38bdf8' : '#ff3b47';
-        const isEnemyFlag = key !== ac.team;
-
-        if (scr.inFront && scr.x >= 30 && scr.x <= w - 30 && scr.y >= 30 && scr.y <= h - 30) {
-          ctx.save();
-          ctx.strokeStyle = col;
-          ctx.fillStyle = col;
-          ctx.lineWidth = 2.0;
-          ctx.beginPath();
-          ctx.moveTo(scr.x, scr.y - 14);
-          ctx.lineTo(scr.x + 14, scr.y);
-          ctx.lineTo(scr.x, scr.y + 14);
-          ctx.lineTo(scr.x - 14, scr.y);
-          ctx.closePath();
-          ctx.stroke();
-
-          ctx.font = '700 11px "Orbitron", Consolas, monospace';
-          ctx.textAlign = 'center';
-          const actionLbl = isEnemyFlag
-            ? (f.state === 'CARRIED' ? `ESCORT CARRIER` : `STEAL ${key} FLAG`)
-            : (f.state === 'AT_BASE' ? `${key} BASE` : (f.state === 'DROPPED' ? `RETURN ${key} FLAG` : `DEFEND ${key} BASE`));
-          ctx.fillText(`🚩 ${actionLbl} [${dist}m]`, scr.x, scr.y - 19);
-          ctx.restore();
-        }
-      }
-    }
-
-    renderRadar(ctx, ac, allAircraft, world, w, h, headingDeg, isMobile = false) {
-      const rRadius = isMobile ? 48 : 82;
-      const rx = 18 + rRadius;
-      const ry = isMobile ? (14 + rRadius) : (h - 22 - rRadius);
+    renderRadar(ctx, ac, allAircraft, world, w, h, headingDeg, isMobile = false, pal = null) {
+      const rRadius = isMobile ? 48 : 80;
+      const rx = 20 + rRadius;
+      const ry = h - 22 - rRadius;
       const radarRange = 9500;
+      const ringCol = pal ? pal.dim : 'rgba(82, 196, 104, 0.20)';
+      const sweepCol = pal ? pal.soft : 'rgba(82, 196, 104, 0.62)';
+      const coneCol = pal ? pal.glass : 'rgba(82, 196, 104, 0.05)';
 
       ctx.save();
 
-      // Outer Bezel & Dark Glass Body
-      const bgGrad = ctx.createRadialGradient(rx, ry, rRadius * 0.1, rx, ry, rRadius);
-      bgGrad.addColorStop(0, 'rgba(4, 14, 28, 0.92)');
-      bgGrad.addColorStop(0.75, 'rgba(6, 12, 24, 0.95)');
-      bgGrad.addColorStop(1, 'rgba(15, 23, 42, 0.98)');
-      ctx.fillStyle = bgGrad;
+      ctx.fillStyle = 'rgba(12, 14, 17, 0.88)';
       ctx.beginPath();
       ctx.arc(rx, ry, rRadius, 0, Math.PI * 2);
       ctx.fill();
 
-      // Outer metallic neon ring
-      ctx.strokeStyle = 'rgba(56, 189, 248, 0.55)';
-      ctx.lineWidth = 2.2;
-      ctx.stroke();
-
-      // Thin inner rim
-      ctx.strokeStyle = 'rgba(0, 255, 157, 0.35)';
-      ctx.lineWidth = 1.0;
+      // Forward FOV Wedge (~56 deg)
+      ctx.fillStyle = coneCol;
       ctx.beginPath();
-      ctx.arc(rx, ry, rRadius - 4, 0, Math.PI * 2);
+      ctx.moveTo(rx, ry);
+      ctx.arc(rx, ry, rRadius - 2, -Math.PI * 0.5 - 0.49, -Math.PI * 0.5 + 0.49);
+      ctx.closePath();
+      ctx.fill();
+
+      ctx.strokeStyle = 'rgba(234, 231, 223, 0.24)';
+      ctx.lineWidth = 1.6;
+      ctx.beginPath();
+      ctx.arc(rx, ry, rRadius, 0, Math.PI * 2);
       ctx.stroke();
 
-      // Concentric Range Rings (3.1km & 6.3km)
-      ctx.strokeStyle = 'rgba(56, 189, 248, 0.18)';
+      ctx.strokeStyle = ringCol;
       ctx.lineWidth = 1.0;
       for (const frac of [0.33, 0.66]) {
         ctx.beginPath();
@@ -1135,12 +1136,11 @@
         ctx.stroke();
       }
 
-      // Compass Crosshairs & N, S, E, W Labels
       const rotRad = THREE.MathUtils.degToRad(-headingDeg);
       const cosR = Math.cos(rotRad);
       const sinR = Math.sin(rotRad);
 
-      ctx.strokeStyle = 'rgba(148, 163, 184, 0.22)';
+      ctx.strokeStyle = 'rgba(234, 231, 223, 0.14)';
       ctx.lineWidth = 1.0;
       ctx.beginPath();
       ctx.moveTo(rx - rRadius + 6, ry);
@@ -1149,43 +1149,42 @@
       ctx.lineTo(rx, ry + rRadius - 6);
       ctx.stroke();
 
-      // Compass Cardinal Points
       const cardinalPts = [
         { label: 'N', ang: -Math.PI * 0.5 + rotRad },
         { label: 'E', ang: 0 + rotRad },
         { label: 'S', ang: Math.PI * 0.5 + rotRad },
         { label: 'W', ang: Math.PI + rotRad }
       ];
-      ctx.font = '700 8.5px "Orbitron", monospace';
+      ctx.font = '700 8.5px "Share Tech Mono", monospace';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       for (const pt of cardinalPts) {
         const lx = rx + Math.cos(pt.ang) * (rRadius - 10);
         const ly = ry + Math.sin(pt.ang) * (rRadius - 10);
-        ctx.fillStyle = pt.label === 'N' ? '#ff4757' : 'rgba(148, 163, 184, 0.6)';
+        ctx.fillStyle = pt.label === 'N' ? '#c9443e' : 'rgba(234, 231, 223, 0.55)';
         ctx.fillText(pt.label, lx, ly);
       }
 
-      // Sweeping Radar Line (Smooth phosphor radar sweep effect)
+      // Sweep wedge
       const sweepAngle = (performance.now() * 0.0022) % (Math.PI * 2);
-      const sweepGrad = ctx.createRadialGradient(rx, ry, 0, rx, ry, rRadius - 5);
-      sweepGrad.addColorStop(0, 'rgba(0, 255, 157, 0.0)');
-      sweepGrad.addColorStop(1, 'rgba(0, 255, 157, 0.12)');
+      const sweepGrad = ctx.createRadialGradient(rx, ry, 0, rx, ry, rRadius - 4);
+      sweepGrad.addColorStop(0, 'rgba(0, 0, 0, 0.0)');
+      sweepGrad.addColorStop(1, ringCol);
       ctx.fillStyle = sweepGrad;
       ctx.beginPath();
       ctx.moveTo(rx, ry);
-      ctx.arc(rx, ry, rRadius - 5, sweepAngle - 0.45, sweepAngle);
+      ctx.arc(rx, ry, rRadius - 4, sweepAngle - 0.45, sweepAngle);
       ctx.closePath();
       ctx.fill();
 
-      ctx.strokeStyle = 'rgba(0, 255, 157, 0.75)';
-      ctx.lineWidth = 1.4;
+      ctx.strokeStyle = sweepCol;
+      ctx.lineWidth = 1.1;
       ctx.beginPath();
       ctx.moveTo(rx, ry);
-      ctx.lineTo(rx + Math.cos(sweepAngle) * (rRadius - 5), ry + Math.sin(sweepAngle) * (rRadius - 5));
+      ctx.lineTo(rx + Math.cos(sweepAngle) * (rRadius - 4), ry + Math.sin(sweepAngle) * (rRadius - 4));
       ctx.stroke();
 
-      // Plot Aircraft Contacts
+      // Aircraft Contacts
       for (const other of allAircraft) {
         if (!other.alive || other === ac) continue;
         const dx = (other.mesh.position.x - ac.mesh.position.x) / radarRange;
@@ -1199,9 +1198,9 @@
 
         if (other.carryingFlag) {
           const pBlink = Math.floor(performance.now() / 200) % 2 === 0;
-          ctx.fillStyle = pBlink ? '#fbbf24' : '#ffffff';
-          ctx.strokeStyle = '#ea580c';
-          ctx.lineWidth = 1.5;
+          ctx.fillStyle = pBlink ? '#d9822b' : '#eae7df';
+          ctx.strokeStyle = '#0c0d0f';
+          ctx.lineWidth = 1.4;
           ctx.beginPath();
           ctx.moveTo(px, py - 5);
           ctx.lineTo(px + 5, py);
@@ -1211,17 +1210,29 @@
           ctx.fill();
           ctx.stroke();
         } else {
-          ctx.fillStyle = (other.team === 'BLUE') ? '#38bdf8' : '#ff4757';
-          ctx.shadowColor = (other.team === 'BLUE') ? '#38bdf8' : '#ff4757';
-          ctx.shadowBlur = 6;
+          ctx.fillStyle = (other.team === 'BLUE') ? '#5e97d1' : '#c9443e';
           ctx.beginPath();
-          ctx.arc(px, py, 3.2, 0, Math.PI * 2);
+          ctx.arc(px, py, 2.8, 0, Math.PI * 2);
           ctx.fill();
-          ctx.shadowBlur = 0;
+        }
+
+        // Relative Altitude Pip for contacts >160m above/below
+        const altDiff = other.mesh.position.y - ac.mesh.position.y;
+        if (Math.abs(altDiff) > 160) {
+          ctx.fillStyle = other.team === 'BLUE' ? 'rgba(94, 151, 209, 0.85)' : 'rgba(201, 68, 62, 0.85)';
+          const tickY = altDiff > 0 ? py - 5 : py + 5;
+          ctx.fillRect(px - 1.5, tickY, 3, 1.5);
+        }
+
+        // Crisp Locked Target Bracket on Radar
+        if (other === ac.target) {
+          ctx.strokeStyle = '#eae7df';
+          ctx.lineWidth = 1.2;
+          ctx.strokeRect(px - 5.5, py - 5.5, 11, 11);
         }
       }
 
-      // Plot Base Flags on radar
+      // Flag Beacons
       for (const key of ['BLUE', 'RED']) {
         const f = world.flags[key];
         if (!f) continue;
@@ -1234,9 +1245,9 @@
         const px = rx + Math.cos(ang) * distNorm * rRadius;
         const py = ry + Math.sin(ang) * distNorm * rRadius;
 
-        ctx.strokeStyle = '#ffffff';
-        ctx.fillStyle = key === 'BLUE' ? '#38bdf8' : '#ff3b47';
-        ctx.lineWidth = 1.4;
+        ctx.strokeStyle = '#eae7df';
+        ctx.fillStyle = key === 'BLUE' ? '#5e97d1' : '#c9443e';
+        ctx.lineWidth = 1.2;
         ctx.beginPath();
         ctx.moveTo(px, py - 4);
         ctx.lineTo(px + 4, py);
@@ -1247,9 +1258,9 @@
         ctx.stroke();
       }
 
-      // Player center arrow
-      ctx.fillStyle = '#00ff9d';
-      ctx.strokeStyle = '#ffffff';
+      // Player center marker
+      ctx.fillStyle = '#eae7df';
+      ctx.strokeStyle = '#0c0d0f';
       ctx.lineWidth = 1;
       ctx.beginPath();
       ctx.moveTo(rx, ry - 6);
@@ -1260,13 +1271,11 @@
       ctx.fill();
       ctx.stroke();
 
-      if (!isMobile) {
-        ctx.fillStyle = 'rgba(56, 189, 248, 0.75)';
-        ctx.font = '700 8.5px "Orbitron", monospace';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'top';
-        ctx.fillText('CTF RADAR • 9.5KM', rx, ry + rRadius + 6);
-      }
+      ctx.fillStyle = 'rgba(234, 231, 223, 0.55)';
+      ctx.font = '700 8.5px "Share Tech Mono", monospace';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'top';
+      ctx.fillText('RADAR 9.5KM', rx, ry + rRadius + 5);
 
       ctx.restore();
     }

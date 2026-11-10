@@ -42,11 +42,11 @@ function buildFalconAirframe(hiDetail, bodyMat, darkMat, teamMat, nozzleMat) {
   });
 
   const hudMat = new THREE.MeshStandardMaterial({
-    color: 0x00ff9d,
-    emissive: 0x00ff9d,
-    emissiveIntensity: 1.6,
+    color: 0x52c468,
+    emissive: 0x3b964c,
+    emissiveIntensity: 1.2,
     transparent: true,
-    opacity: 0.68,
+    opacity: 0.65,
     side: THREE.DoubleSide,
     depthWrite: false
   });
@@ -4169,29 +4169,33 @@ function buildSpectreAirframe(hiDetail, bodyMat, darkMat, teamMat, nozzleMat) {
       const frameId = (typeId === 'F22' || typeId === 'FALCON') ? 'FALCON' : (typeId === 'SU57' ? 'PHANTOM' : typeId);
       const liv = CONFIG.LIVERIES[liveryIndex % CONFIG.LIVERIES.length] || CONFIG.LIVERIES[0];
 
-      // Signature Livery Neon Trim Material (Cyber Emerald: 0x00ff9d, Solar Gold: 0xfbbf24, Crimson Nova: 0xff3b47, etc.)
-      const liveryTrimMat = new THREE.MeshBasicMaterial({ color: liv.trim });
+      // Tactical Squadron Livery Trim Material (Satin RAM Finish)
+      const liveryTrimMat = new THREE.MeshStandardMaterial({
+        color: liv.trim,
+        roughness: 0.56,
+        metalness: 0.20
+      });
 
-      // Subtle Squadron Team IFF Color (Blue or Red) for wingtip navigation lights and team alignment
-      const teamColor = team === 'BLUE' ? 0x38bdf8 : (team === 'RED' ? 0xff3b47 : liv.trim);
+      // Subtle Squadron Team IFF Color (NATO Blue or Crimson) for wingtip navigation lights
+      const teamColor = team === 'BLUE' ? 0x5e97d1 : (team === 'RED' ? 0xc9443e : liv.trim);
       const teamNavMat = new THREE.MeshBasicMaterial({ color: teamColor });
 
       const bodyMat = new THREE.MeshStandardMaterial({
         color: liv.body,
         emissive: 0x000000,
-        roughness: 0.38,
-        metalness: 0.52
+        roughness: 0.68,
+        metalness: 0.22
       });
       const darkMat = new THREE.MeshStandardMaterial({
         color: liv.dark,
         emissive: 0x000000,
-        roughness: 0.48,
-        metalness: 0.42
+        roughness: 0.78,
+        metalness: 0.16
       });
       const nozzleMat = new THREE.MeshStandardMaterial({
         color: 0x222a36,
-        roughness: 0.28,
-        metalness: 0.88
+        roughness: 0.34,
+        metalness: 0.80
       });
 
       let res = null;
@@ -4213,16 +4217,16 @@ function buildSpectreAirframe(hiDetail, bodyMat, darkMat, teamMat, nozzleMat) {
         console.error('Error generating airframe for ' + frameId + ':', err);
       }
 
-      // Hybrid Livery & Team Accents: Subtle Blue/Red squadron navigation lights/stripes on wingtips for team alignment
+      // Flush wingtip/rail squadron IFF marker lights aligned directly to each airframe wingtip
       const wingtipSpans = {
-        FALCON:  { x: 6.45, y: 0.22, z: 1.45 },
-        VIPER:   { x: 4.92, y: 0.12, z: 0.82 },
-        TITAN:   { x: 8.25, y: 0.42, z: 0.52 },
-        PHANTOM: { x: 6.85, y: 0.22, z: 1.35 },
-        SPECTRE: { x: 7.25, y: 0.14, z: 1.05 }
+        FALCON:  { x: 5.66, y: 0.09, z: 3.35 },
+        VIPER:   { x: 4.82, y: 0.12, z: 2.85 },
+        TITAN:   { x: 7.26, y: 0.14, z: 0.65 },
+        PHANTOM: { x: 5.92, y: 0.03, z: -0.25 },
+        SPECTRE: { x: 7.72, y: -0.09, z: 2.35 }
       };
       const wt = wingtipSpans[frameId] || wingtipSpans.FALCON;
-      const navLightGeo = new THREE.BoxGeometry(0.12, 0.10, 0.55);
+      const navLightGeo = new THREE.BoxGeometry(0.10, 0.08, 0.46);
       const leftNav = new THREE.Mesh(navLightGeo, teamNavMat);
       leftNav.position.set(-wt.x, wt.y, wt.z);
       const rightNav = new THREE.Mesh(navLightGeo, teamNavMat);
@@ -4237,7 +4241,7 @@ function buildSpectreAirframe(hiDetail, bodyMat, darkMat, teamMat, nozzleMat) {
       const hitShellGeo = new THREE.OctahedronGeometry(1.0, 1);
       hitShellGeo.scale(7.6, 1.8, 6.8);
       const hitShellMat = new THREE.MeshBasicMaterial({
-        color: 0xff3b47,
+        color: 0xc9443e,
         wireframe: true,
         transparent: true,
         opacity: 0.0,

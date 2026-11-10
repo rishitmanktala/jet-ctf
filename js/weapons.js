@@ -13,10 +13,10 @@
       this.bullets = [];
 
       this.bulletGeo = new THREE.BoxGeometry(0.48, 0.48, 13.0);
-      this.bulletMatBlue = new THREE.MeshBasicMaterial({ color: 0x38bdf8 });
-      this.bulletMatRed  = new THREE.MeshBasicMaterial({ color: 0xff4757 });
-      this.bulletMatGold = new THREE.MeshBasicMaterial({ color: 0x00ff9d });
-      this.bulletMatOverdrive = new THREE.MeshBasicMaterial({ color: 0xfbbf24 });
+      this.bulletMatBlue = new THREE.MeshBasicMaterial({ color: 0x5e97d1 });
+      this.bulletMatRed  = new THREE.MeshBasicMaterial({ color: 0xd64541 });
+      this.bulletMatGold = new THREE.MeshBasicMaterial({ color: 0xf0d284 });
+      this.bulletMatOverdrive = new THREE.MeshBasicMaterial({ color: 0xe07b28 });
       this.playerTracerMat = this.bulletMatGold;
     }
 
@@ -139,7 +139,7 @@
         const groundY = Math.max(CONFIG.WORLD.seaLevel, world.getTerrainHeight(b.mesh.position.x, b.mesh.position.z));
         if (hit || b.mesh.position.y <= groundY) {
           if (!hit && b.mesh.position.y <= groundY) {
-            this.particles.spawnParticle(b.mesh.position, _v2.set(0, 5, 0), 0x38bdf8, 2.0, 6.5, 0.25, true);
+            this.particles.spawnParticle(b.mesh.position, _v2.set(0, 5, 0), 0xc2b9a7, 2.0, 6.5, 0.25, false);
           }
           this.scene.remove(b.mesh);
           this.bullets.splice(i, 1);

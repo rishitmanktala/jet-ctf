@@ -138,13 +138,13 @@
           this.boostEnergy = CONFIG.BOOST.maxEnergy;
           if (this.isPlayer && game) {
             game.audio.playFlagFanfare(true);
-            game.addFloatingPopup('🔥 HYPER OVERDRIVE ACTIVATED! 2X FIREPOWER & INFINITE BOOST! 🔥', '#fbbf24');
+            game.addFloatingPopup('SYSTEMS OVERDRIVE ACTIVE // 2X FIREPOWER & INFINITE BOOST', '#d9822b');
           }
         }
       }
 
       if (this.isPlayer && popupText && game) {
-        game.addFloatingPopup(`${popupText} (${mult}x COMBO!)`, '#00ff9d');
+        game.addFloatingPopup(`${popupText} (${mult}x COMBO)`, '#52c468');
       }
       return totalPts;
     }
@@ -261,7 +261,7 @@
         if (ud.hitShell && ud.hitShellMat) {
           ud.hitShell.visible = !this.hideMeshForCockpit;
           ud.hitShellMat.opacity = flashIntensity * 0.78;
-          ud.hitShellMat.color.setHex(this.isPlayer ? 0xff3b47 : 0xfbbf24);
+          ud.hitShellMat.color.setHex(this.isPlayer ? 0xc9443e : 0xd9822b);
           const pulseScale = 1.0 + (1.0 - flashIntensity) * 0.25;
           ud.hitShell.scale.set(pulseScale, pulseScale, pulseScale);
         }
@@ -323,7 +323,7 @@
         this.wingtipTrailTimer += dt;
         if (this.wingtipTrailTimer >= 0.025) {
           this.wingtipTrailTimer = 0;
-          const trailCol = this.overdriveTimer > 0 ? 0xfbbf24 : (boostActive ? 0x38bdf8 : 0xa5f3fc);
+          const trailCol = this.overdriveTimer > 0 ? 0xe0922b : 0xe5e3dc;
           for (const wx of [-6.8, 6.8]) {
             _v1.set(wx, 0, 2.8).applyQuaternion(this.mesh.quaternion).add(this.mesh.position);
             particles.spawnParticle(_v1, _v2.set(0, 0, 0), trailCol, 0.95, 2.4, 0.28, true);

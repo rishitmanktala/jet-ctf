@@ -5,16 +5,16 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="mobile-web-app-capable" content="yes" />
-  <title>Fighter Jets 3D // Capture The Flag Air Combat</title>
+  <title>Fighter Jets 3D — Capture The Flag Air Combat</title>
   <meta name="description" content="Fast-paced 3D aerial combat and Capture The Flag dogfighting web game powered by Three.js." />
-  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>✈️</text></svg>" />
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><polygon points=%2250,10 62,40 92,62 92,70 60,58 58,82 70,92 50,86 30,92 42,82 40,58 8,70 8,62 38,40%22 fill=%22%23d9822b%22/></svg>" />
   <!-- Open Graph / Social Meta -->
   <meta property="og:type" content="website" />
   <meta property="og:url" content="https://rishitmanktala.github.io/jet-ctf/" />
-  <meta property="og:title" content="Fighter Jets 3D // Capture The Flag Air Combat" />
+  <meta property="og:title" content="Fighter Jets 3D — Capture The Flag Air Combat" />
   <meta property="og:description" content="Fast-paced 3D aerial combat and Capture The Flag dogfighting web game powered by Three.js." />
   <meta name="twitter:card" content="summary_large_image" />
-  <meta name="twitter:title" content="Fighter Jets 3D // Capture The Flag Air Combat" />
+  <meta name="twitter:title" content="Fighter Jets 3D — Capture The Flag Air Combat" />
   <meta name="twitter:description" content="Fast-paced 3D aerial combat and Capture The Flag dogfighting web game powered by Three.js." />
   <!-- CrazyGames HTML5 SDK v3 -->
   <script src="https://sdk.crazygames.com/crazygames-sdk-v3.js"></script>
@@ -24,605 +24,586 @@
   <link rel="stylesheet" href="css/styles.css" />
 </head>
 <body>
+  <!-- Phone Blocker: Pure black screen with white text -->
+  <div id="phone-blocker" style="display:none; position:fixed; inset:0; width:100vw; height:100vh; background:#000000; color:#ffffff; z-index:999999; align-items:center; justify-content:center; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size:18px; font-weight:400; text-align:center; user-select:none;">
+    Not designed for phones
+  </div>
+
   <div id="game-container">
-  <script>
-    (function() {
-      function detectPhone() {
-        var ua = navigator.userAgent || '';
-        if (/Android|iPhone|iPod|Mobile|IEMobile|Opera Mini/i.test(ua)) return true;
-        if (window.matchMedia && window.matchMedia('(hover: none) and (pointer: coarse) and (max-width: 920px)').matches) return true;
-        return false;
-      }
-
-      function syncViewportSize() {
-        var container = document.getElementById('game-container');
-        if (!container) return;
-        var vw = window.innerWidth || document.documentElement.clientWidth;
-        var vh = window.innerHeight || document.documentElement.clientHeight;
-        var isPhone = detectPhone();
-        document.body.classList.toggle('mobile-mode', isPhone);
-
-        container.style.position = 'fixed';
-        container.style.top = '0px';
-        container.style.left = '0px';
-        container.style.width = vw + 'px';
-        container.style.height = vh + 'px';
-      }
-
-      window.__detectPhone = detectPhone;
-      window.__syncViewportSize = syncViewportSize;
-
-      function triggerAutoFullscreen() {
-        var doc = document.documentElement;
-        var fn = doc.requestFullscreen || doc.webkitRequestFullscreen || doc.mozRequestFullScreen || doc.msRequestFullscreen;
-        if (fn && !document.fullscreenElement && !document.webkitFullscreenElement) {
-          fn.call(doc).catch(function() {});
+    <script>
+      (function() {
+        function isPhoneDevice() {
+          var ua = navigator.userAgent || '';
+          if (/Android|iPhone|iPod|Mobile|IEMobile|Opera Mini/i.test(ua)) return true;
+          if (window.matchMedia && window.matchMedia('(hover: none) and (pointer: coarse) and (max-width: 900px)').matches) return true;
+          return false;
         }
-        if (screen.orientation && screen.orientation.lock) {
-          screen.orientation.lock('landscape').catch(function() {});
+
+        if (isPhoneDevice()) {
+          var el = document.getElementById('phone-blocker');
+          if (el) el.style.display = 'flex';
+          window.__isPhoneDevice = true;
         }
-      }
-      window.__triggerAutoFullscreen = triggerAutoFullscreen;
 
-      try { triggerAutoFullscreen(); } catch (e) {}
+        function syncViewportSize() {
+          var container = document.getElementById('game-container');
+          if (!container) return;
+          var vw = window.innerWidth || document.documentElement.clientWidth;
+          var vh = window.innerHeight || document.documentElement.clientHeight;
+          container.style.position = 'fixed';
+          container.style.top = '0px';
+          container.style.left = '0px';
+          container.style.width = vw + 'px';
+          container.style.height = vh + 'px';
+        }
 
-      syncViewportSize();
-      window.addEventListener('DOMContentLoaded', function() {
+        window.__syncViewportSize = syncViewportSize;
         syncViewportSize();
-        triggerAutoFullscreen();
-      });
-      window.addEventListener('load', function() {
-        syncViewportSize();
-        triggerAutoFullscreen();
-      });
-      window.addEventListener('resize', syncViewportSize);
-      window.addEventListener('orientationchange', function() {
-        syncViewportSize();
-        triggerAutoFullscreen();
-      });
-      if (window.visualViewport) {
-        window.visualViewport.addEventListener('resize', syncViewportSize);
-      }
+        window.addEventListener('DOMContentLoaded', syncViewportSize);
+        window.addEventListener('load', syncViewportSize);
+        window.addEventListener('resize', syncViewportSize);
+        if (window.visualViewport) {
+          window.visualViewport.addEventListener('resize', syncViewportSize);
+        }
+      })();
+    </script>
 
-      var firstGestureEvents = ['touchstart', 'touchend', 'pointerdown', 'mousedown', 'click'];
-      function onFirstUserGesture() {
-        triggerAutoFullscreen();
-      }
-      firstGestureEvents.forEach(function(evt) {
-        window.addEventListener(evt, onFirstUserGesture, { capture: true, passive: true });
-      });
-    })();
-  </script>
-  <canvas id="webgl-canvas"></canvas>
+    <canvas id="webgl-canvas"></canvas>
     <canvas id="hud-canvas"></canvas>
 
-    <!-- Top Quick-Access Bar during flight (hidden per user request) -->
+    <!-- Hidden legacy quick-controls container -->
     <div id="top-controls" class="hidden" style="display:none !important;">
-      <button id="btn-cam" class="hud-mini-btn" title="Shortcut: C">CAM [C]</button>
-      <button id="btn-help-hud" class="hud-mini-btn active desktop-only" title="Shortcut: H">CONTROLS [H]</button>
-      <button id="btn-touch-ui" class="hud-mini-btn desktop-only" title="Toggle On-Screen Mobile Touch Buttons">TOUCH PAD</button>
-      <button id="btn-mute" class="hud-mini-btn" title="Shortcut: M">AUDIO [M]</button>
-      <button id="btn-hangar" class="hud-mini-btn" title="Return to 3D Hangar showroom">HANGAR</button>
-      <button id="btn-pause" class="hud-mini-btn" title="Shortcut: Tab or P">SCORE [TAB]</button>
+      <button id="btn-cam" class="hud-mini-btn">CAM [C]</button>
+      <button id="btn-help-hud" class="hud-mini-btn active desktop-only">CONTROLS [H]</button>
+      <button id="btn-mute" class="hud-mini-btn">AUDIO [M]</button>
+      <button id="btn-hangar" class="hud-mini-btn">HANGAR</button>
+      <button id="btn-pause" class="hud-mini-btn">SCORE [TAB]</button>
     </div>
 
-    <!-- Mobile & Tablet Virtual Dynamic Flight Joystick -->
-    <div id="virtual-joystick-container" class="hidden">
-      <div id="vjoy-base" class="vjoy-base idle">
-        <div id="vjoy-ring"></div>
-        <div id="vjoy-knob"></div>
-      </div>
-      <div id="vjoy-hint">🕹️ FLIGHT STICK</div>
-    </div>
-
-    <!-- Mobile & Tablet Streamlined Touch Flight Controls -->
-    <div id="touch-controls" class="hidden">
-      <button id="tbtn-pause" class="touch-pause-btn" title="Pause Game">⏸</button>
-      <div class="touch-cluster-right">
-        <button id="tbtn-target" class="touch-btn touch-btn-target" title="Cycle Target">🎯<span>TARGET</span></button>
-        <button id="tbtn-drop-flag" class="touch-btn touch-btn-drop hidden" title="Drop Stolen Flag">🏳️<span>DROP FLAG</span></button>
-        <button id="tbtn-brake" class="touch-btn touch-btn-brake" title="Airbrake / High-G Turn">⟲<span>BRAKE</span></button>
-        <button id="tbtn-boost" class="touch-btn touch-btn-boost" title="Nitro Afterburner">🔥<span>BOOST</span></button>
-      </div>
-    </div>
-
-    <!-- Kill Feed & CTF Radio Callouts -->
+    <!-- Kill Feed & Radio Comms -->
     <div id="feed-container"></div>
 
-    <!-- Spectate Controls Bar -->
-    <div id="spectate-bar" class="hidden">
-      <div style="display:flex;flex-direction:column;gap:3px;max-width:380px;">
-        <span id="spectate-label" style="color:#fbbf24;font-weight:700;letter-spacing:0.04em;">SPECTATING: --</span>
-      </div>
-      <button id="btn-spec-next" class="hud-mini-btn">NEXT PILOT [R]</button>
-      <button id="btn-spec-plane" class="hud-mini-btn" style="background:rgba(56,189,248,0.18);color:#38bdf8;border-color:rgba(56,189,248,0.45);font-weight:700;">✈ CHANGE PLANE</button>
-      <button id="btn-spec-respawn" class="hud-mini-btn active" style="min-width:120px;">SPAWN IN 4.0s</button>
-      <button id="btn-spec-end" class="hud-mini-btn">HANGAR</button>
-    </div>
-
-    <!-- CENTER RESPAWN BRIEFING & TIP OVERLAY -->
-    <div id="respawn-center-overlay" class="hidden" style="position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 90; width: 90%; max-width: 560px; pointer-events: auto;">
-      <div class="panel-card" style="box-shadow: 0 16px 48px rgba(0,0,0,0.85), 0 0 24px rgba(56,189,248,0.25); border: 1px solid rgba(56,189,248,0.35); text-align: center; padding: 22px 26px;">
-        <div style="font-size: 11px; font-weight: 800; color: #ff4757; letter-spacing: 0.08em; margin-bottom: 4px;">⚠️ AIRFRAME DESTROYED // RE-DEPLOYMENT IN PROGRESS</div>
-        <div id="respawn-killer-line" style="font-size: 13.5px; font-weight: 700; color: #fbbf24; margin-bottom: 14px;">ELIMINATED BY: --</div>
-        
-        <div style="background: rgba(56, 189, 248, 0.08); border-left: 3px solid #38bdf8; border-radius: 6px; padding: 14px 18px; margin-bottom: 18px; text-align: left;">
-          <div style="font-size: 10px; font-weight: 800; color: #38bdf8; letter-spacing: 0.06em; margin-bottom: 4px;">TACTICAL MISSION BRIEFING</div>
-          <div id="respawn-center-tip-text" style="font-size: 14px; font-weight: 600; color: #f8fafc; line-height: 1.45;">
-            💡 Both flags must be at your home base to capture (+1,000 PTS)!
-          </div>
-        </div>
-
-        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
-          <div id="respawn-center-timer" style="font-size: 14px; font-weight: 800; color: #fbbf24; font-family: monospace;">
-            RESPAWNING IN 4.0s
-          </div>
-          <div style="display: flex; gap: 8px;">
-            <button id="btn-center-change-plane" class="primary-btn" style="font-size: 11.5px; padding: 8px 18px; background: #38bdf8; color: #040914; font-weight: 800; border: none; border-radius: 4px; cursor: pointer;">✈ CHANGE / UPGRADE PLANE</button>
-            <button id="btn-center-deploy" class="primary-btn hidden" style="font-size: 11.5px; padding: 8px 20px; background: #00ff9d; color: #040914; font-weight: 800; border: none; border-radius: 4px; cursor: pointer;">▶ DEPLOY NOW</button>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- MID-MATCH RE-DEPLOYMENT WORKSHOP (HANGAR-STYLE AIRFRAME WORKSHOP) -->
-    <div id="respawn-hangar-screen" class="overlay-screen hangar-screen hidden">
-      <!-- Top HUD Header -->
-      <header class="hangar-hud-header">
-        <div class="hangar-brand">
-          <div class="hangar-game-title">TACTICAL <span>RE-DEPLOYMENT</span></div>
-          <div class="hangar-mode-badge" style="color:#00ff9d;">MID-MATCH AIRFRAME WORKSHOP</div>
-        </div>
-
-        <!-- Match Status & Credits -->
-        <div class="hangar-header-center">
-          <div style="background:rgba(4,9,20,0.85);border:1px solid rgba(56,189,248,0.3);border-radius:6px;padding:5px 14px;display:flex;align-items:center;gap:12px;">
-            <div id="respawn-hangar-match-score" style="font-size:13px;font-weight:800;font-family:monospace;color:#38bdf8;">
-              BLUE 0 — 0 RED
-            </div>
-            <div style="font-size:11px;color:#fbbf24;font-family:monospace;" id="respawn-hangar-time-badge">
-              ⏱ 09:45
-            </div>
-          </div>
-          <div class="credits-chip">
-            <span>₵</span>
-            <span id="respawn-hangar-credits-val">600</span>
-          </div>
-        </div>
-
-        <!-- Top Actions -->
-        <div class="hangar-header-actions">
-          <div class="hangar-nav-tabs" id="respawn-hangar-tabs">
-            <button class="respawn-tab-btn active" data-tab="fighter">✈️ FIGHTER</button>
-            <button class="respawn-tab-btn" data-tab="upgrades">⚡ UPGRADES</button>
-            <button class="respawn-tab-btn" data-tab="paint">🎨 PAINT</button>
-          </div>
-          <button id="btn-respawn-hangar-spectate" class="hud-mini-btn" style="background:rgba(56,189,248,0.15);color:#38bdf8;border-color:rgba(56,189,248,0.4);font-weight:700;">👁️ SPECTATE</button>
-        </div>
-      </header>
-
-      <!-- Top Center Floating Carousel Switcher (Positioned over the 3D fighter) -->
-      <div class="hangar-center-carousel" id="respawn-center-carousel">
-        <div class="workshop-carousel-bar">
-          <button id="btn-respawn-prev-jet" class="carousel-nav-btn" title="Previous Aircraft [A / ←]">◀ PREV</button>
-          <div class="carousel-jet-info">
-            <div class="carousel-jet-counter" id="respawn-carousel-counter">AIRCRAFT 1 OF 5</div>
-            <div class="carousel-jet-name" id="respawn-carousel-name">F-22 FALCON</div>
-            <div class="carousel-jet-role" id="respawn-carousel-role">AIR SUPERIORITY FIGHTER</div>
-            <div id="respawn-carousel-action-slot" class="carousel-action-slot">
-              <!-- Dynamically injected: [✓ EQUIPPED FOR NEXT SPAWN] or [✈ SELECT FOR RESPAWN] or [🔓 UNLOCK AIRFRAME] -->
-            </div>
-          </div>
-          <button id="btn-respawn-next-jet" class="carousel-nav-btn" title="Next Aircraft [D / →]">NEXT ▶</button>
-        </div>
-        <!-- Quick Jet Picker Pills -->
-        <div class="jet-pill-row" id="respawn-jet-pills">
-          <!-- Injected dynamically via JS -->
-        </div>
-      </div>
-
-      <!-- Left Wing Dock: Upgrades -->
-      <aside class="hangar-wing hangar-wing-left" id="respawn-wing-left">
-        <div class="wing-content">
-          <div class="panel-section-title">
-            <span>⚡ AIRFRAME UPGRADES</span>
-            <span id="respawn-upgrade-jet-name" style="color:#00ff9d;font-family:monospace;font-size:9.5px;white-space:nowrap;letter-spacing:0.04em;">FALCON</span>
-          </div>
-          <div class="upgrades-compact-list" id="respawn-upgrades-list">
-            <!-- 5 Upgrades injected dynamically via JS -->
-          </div>
-        </div>
-      </aside>
-
-      <!-- Right Wing Dock: Custom Paint & Tracers + Rules -->
-      <aside class="hangar-wing hangar-wing-right" id="respawn-wing-right">
-        <div class="wing-content">
-          <div class="panel-section-title">
-            <span>🎨 CUSTOM PAINT &amp; TRACERS</span>
-            <span style="color:#38bdf8;font-family:monospace;font-size:10px;">LIVE 3D PREVIEW</span>
-          </div>
-
-          <div>
-            <span class="custom-sublabel">Aircraft Livery Camo &amp; Neon Trim</span>
-            <div class="livery-row" id="respawn-livery-group">
-              <div class="livery-swatch active" data-livery="0" style="background:linear-gradient(135deg,#00ff9d,#0284c7);" title="Cyber Emerald"></div>
-              <div class="livery-swatch" data-livery="1" style="background:linear-gradient(135deg,#38bdf8,#6366f1);" title="Ion Cyan"></div>
-              <div class="livery-swatch" data-livery="2" style="background:linear-gradient(135deg,#ff3b47,#f97316);" title="Crimson Nova"></div>
-              <div class="livery-swatch" data-livery="3" style="background:linear-gradient(135deg,#1e293b,#0f172a);" title="Stealth Onyx"></div>
-              <div class="livery-swatch" data-livery="4" style="background:linear-gradient(135deg,#fbbf24,#ea580c);" title="Solar Gold"></div>
-              <div class="livery-swatch" data-livery="5" style="background:linear-gradient(135deg,#f8fafc,#94a3b8);" title="Arctic Ghost"></div>
-            </div>
-          </div>
-
-          <div style="margin-top:6px;">
-            <span class="custom-sublabel">20mm Cannon Tracer Round Color</span>
-            <div class="livery-row" id="respawn-tracer-group">
-              <div class="livery-swatch active" data-tracer="0" style="background:#38bdf8;" title="Ion Cyan"></div>
-              <div class="livery-swatch" data-tracer="1" style="background:#00ff9d;" title="Laser Emerald"></div>
-              <div class="livery-swatch" data-tracer="2" style="background:#ff3b47;" title="Crimson Fury"></div>
-              <div class="livery-swatch" data-tracer="3" style="background:#fbbf24;" title="Solar Amber"></div>
-              <div class="livery-swatch" data-tracer="4" style="background:#d946ef;" title="Neon Violet"></div>
-              <div class="livery-swatch" data-tracer="5" style="background:#ffffff;" title="Pure White"></div>
-            </div>
-          </div>
-
-          <!-- CTF Rules & Capture Instructions -->
-          <div style="margin-top:10px;padding:9px 12px;background:rgba(56,189,248,0.06);border:1px solid rgba(56,189,248,0.22);border-radius:6px;font-size:11px;line-height:1.45;color:#94a3b8;">
-            <div style="font-weight:700;color:#38bdf8;margin-bottom:4px;display:flex;align-items:center;gap:6px;">
-              <span>🚩 CTF RULES &amp; CAPTURE (+1,000 PTS)</span>
-            </div>
-            <div>• <b>Dual-Flag Rule:</b> Both flags must be at your base to capture!</div>
-            <div>• <b>Recover Flag:</b> Hunt down enemy carrier if your flag was stolen.</div>
-          </div>
-        </div>
-      </aside>
-
-      <!-- Center 3D Orbit Drag Hint Pill -->
-      <div class="hangar-orbit-hint" style="bottom: 74px;">
-        <span>🖱️ DRAG TO ROTATE AIRCRAFT IN 3D</span>
-      </div>
-
-      <!-- Bottom Launch Floating Dock -->
-      <footer class="hangar-bottom-dock">
-        <button id="btn-respawn-launch" class="primary-btn hangar-launch-btn">▶ DEPLOY TO BATTLE</button>
-        <div class="hangar-launch-subtitle" id="respawn-launch-subtitle">
-          RE-DEPLOYING INTO ONGOING CTF SQUADRON MATCH
-        </div>
-      </footer>
-    </div>
-
-    <!-- FLOATING INTERACTIVE TUTORIAL CARD ON HUD -->
+    <!-- Interactive Onboarding Tutorial Card -->
     <div id="tutorial-card" class="hidden"></div>
 
-    <!-- SETTINGS MODAL -->
-    <div id="settings-modal" class="hidden">
-      <div class="settings-panel">
-        <div class="title-header" style="margin-bottom:8px;">
-          <div style="font-size:18px;font-weight:800;color:#38bdf8;letter-spacing:0.08em;">⚙️ FLIGHT &amp; SYSTEM SETTINGS</div>
-          <button id="btn-close-settings" class="hud-mini-btn">✕ CLOSE</button>
-        </div>
-        <div class="setting-row">
-          <span>Direct Mouse Aim Sensitivity</span>
-          <div style="display:flex;align-items:center;gap:8px;">
-            <input type="range" id="set-mouse-sens" class="setting-slider" min="0.5" max="2.5" step="0.1" value="1.0" />
-            <span id="lbl-mouse-sens" style="font-family:monospace;width:38px;">1.0x</span>
+    <!-- Spectate Bottom Control Strip -->
+    <div id="spectate-bar" class="hidden">
+      <div class="spec-meta">
+        <span class="spec-kicker">SPECTATE</span>
+        <span id="spectate-label">--</span>
+      </div>
+      <div class="spec-actions">
+        <button id="btn-spec-next" class="hud-mini-btn">NEXT [R]</button>
+        <button id="btn-spec-plane" class="hud-mini-btn spec-amber">SWAP JET</button>
+        <button id="btn-spec-respawn" class="hud-mini-btn active" style="min-width:118px;">SPAWN 4.0s</button>
+        <button id="btn-spec-end" class="hud-mini-btn">HANGAR</button>
+      </div>
+    </div>
+
+    <!-- Center Respawn Status Overlay -->
+    <div id="respawn-center-overlay" class="hidden">
+      <div class="tactical-modal compact-modal">
+        <div class="modal-head">
+          <div>
+            <div class="modal-eyebrow red-text">SHOT DOWN</div>
+            <div id="respawn-killer-line" class="modal-title-sm">ELIMINATED BY --</div>
           </div>
+          <div id="respawn-center-timer" class="mono-badge amber-text">4.0s</div>
         </div>
-        <div class="setting-row">
-          <span>Invert Pitch (Y-Axis)</span>
-          <input type="checkbox" id="set-invert-y" style="width:20px;height:20px;accent-color:#00ff9d;" />
+        <div class="directive-strip">
+          <div id="respawn-center-tip-text">Both flags must be at your base to score a capture.</div>
         </div>
-        <div class="setting-row">
-          <span>BGM Synthwave Soundtrack Volume</span>
-          <div style="display:flex;align-items:center;gap:8px;">
-            <input type="range" id="set-music-vol" class="setting-slider" min="0" max="1" step="0.05" value="0.65" />
-            <span id="lbl-music-vol" style="font-family:monospace;width:38px;">65%</span>
-          </div>
-        </div>
-        <div class="setting-row">
-          <span>Flight SFX Volume</span>
-          <div style="display:flex;align-items:center;gap:8px;">
-            <input type="range" id="set-sfx-vol" class="setting-slider" min="0" max="1" step="0.05" value="0.85" />
-            <span id="lbl-sfx-vol" style="font-family:monospace;width:38px;">85%</span>
-          </div>
-        </div>
-        <div class="setting-row">
-          <span>Graphics Performance Preset</span>
-          <select id="set-graphics" style="background:#0f172a;color:#f8fafc;border:1px solid rgba(56,189,248,0.4);border-radius:4px;padding:4px 8px;font-family:inherit;">
-            <option value="HIGH">High (Full Quality &amp; 60 FPS)</option>
-            <option value="MEDIUM">Medium (Balanced)</option>
-            <option value="LOW">Low (Max FPS Performance)</option>
-          </select>
-        </div>
-        <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:10px;flex-wrap:wrap;">
-          <button id="btn-replay-tutorial" class="secondary-btn" style="font-size:11px;padding:6px 12px;">REPLAY TUTORIAL</button>
-          <button id="btn-reset-career" class="secondary-btn" style="font-size:11px;padding:6px 12px;color:#ff4757;border-color:rgba(255,71,87,0.4);">RESET SAVE DATA</button>
+        <div class="modal-foot">
+          <button id="btn-center-change-plane" class="secondary-btn">CHANGE AIRFRAME</button>
+          <button id="btn-center-deploy" class="primary-btn hidden">DEPLOY</button>
         </div>
       </div>
     </div>
 
-    <!-- START SCREEN (3D HANGAR & FLEET COMMAND SHOWROOM) -->
-    <div id="start-screen" class="overlay-screen hangar-screen">
-      <!-- Top HUD Header -->
-      <header class="hangar-hud-header">
+    <!-- ============================================================
+         PRIMARY HANGAR SCREEN (ASYMMETRIC ACE COMBAT / WAR THUNDER LAYOUT)
+    ============================================================ -->
+    <div id="start-screen" class="overlay-screen hangar-screen tab-fighter-active">
+      <!-- Slim Top Header Bar -->
+      <header class="hangar-top-bar">
         <div class="hangar-brand">
-          <div class="hangar-game-title">FIGHTER JETS <span>3D</span></div>
-          <div class="hangar-mode-badge">TACTICAL SHOWROOM &amp; AIRBASE</div>
+          <span class="hangar-brand-mark"></span>
+          <span class="hangar-game-title">FIGHTER JETS <span>3D</span></span>
+          <button id="hangar-team-pill" class="team-pill team-blue" title="Click to switch Squadron">BLUE SQUADRON</button>
         </div>
 
-        <!-- Pilot Profile & Credits -->
-        <div class="hangar-header-center">
+        <nav class="hangar-nav-tabs" id="main-hangar-tabs">
+          <button class="hangar-tab-btn active" data-tab="fighter">AIRFRAME</button>
+          <button class="hangar-tab-btn" data-tab="upgrades">UPGRADES</button>
+          <button class="hangar-tab-btn" data-tab="paint">LIVERY</button>
+          <button class="hangar-tab-btn" data-tab="pilot">DOSSIER</button>
+        </nav>
+
+        <div class="hangar-utility-cluster">
           <div class="pilot-profile-badge">
-            <span id="hangar-rank-icon" class="rank-icon-large">🔹</span>
-            <div>
+            <span id="hangar-rank-icon" class="rank-icon-large">[C-1]</span>
+            <div class="rank-meta">
               <div id="hangar-rank-name" class="rank-name-label">CADET I</div>
-              <div class="xp-bar-container">
-                <div id="hangar-xp-fill" class="xp-bar-fill" style="width:0%;"></div>
-              </div>
+              <div class="xp-bar-container"><div id="hangar-xp-fill" class="xp-bar-fill" style="width:0%;"></div></div>
             </div>
           </div>
           <div class="credits-chip">
-            <span>₵</span>
+            <span class="chip-lbl">PTS</span>
             <span id="hangar-credits-val">600</span>
           </div>
-        </div>
-
-        <!-- Top Mode Tabs & Settings -->
-        <div class="hangar-header-actions">
-          <div class="hangar-nav-tabs" id="main-hangar-tabs">
-            <button class="hangar-tab-btn active" data-tab="fighter">✈️ FIGHTER</button>
-            <button class="hangar-tab-btn" data-tab="upgrades">⚡ UPGRADES</button>
-            <button class="hangar-tab-btn" data-tab="paint">🎨 PAINT</button>
-            <button class="hangar-tab-btn" data-tab="pilot">🎖️ PILOT</button>
-          </div>
-          <button id="btn-open-settings" class="hud-mini-btn">⚙️ SETTINGS</button>
+          <button id="btn-toggle-briefing" class="hud-mini-btn" title="Controls & Mission Rules">[?] BRIEFING</button>
+          <button id="btn-open-settings" class="hud-mini-btn">SETTINGS</button>
         </div>
       </header>
 
-      <!-- Top Center Floating Carousel Switcher (Positioned over the 3D fighter) -->
-      <div class="hangar-center-carousel" id="hangar-center-carousel">
-        <div class="workshop-carousel-bar">
-          <button id="btn-prev-jet" class="carousel-nav-btn" title="Previous Aircraft [A / ←]">◀ PREV</button>
-          <div class="carousel-jet-info">
-            <div class="carousel-jet-counter" id="carousel-jet-counter">AIRCRAFT 1 OF 5</div>
-            <div class="carousel-jet-name" id="carousel-jet-name">F-22 FALCON</div>
-            <div class="carousel-jet-role" id="carousel-jet-role">AIR SUPERIORITY FIGHTER</div>
-            <div id="carousel-jet-action-slot" class="carousel-action-slot">
-              <!-- Dynamically injected: [✓ EQUIPPED] or [EQUIP FIGHTER] or [UNLOCK] -->
+      <!-- Left Tactical Column (Only Active Tab Content Shown) -->
+      <aside class="hangar-dock-left" id="hangar-dock-left">
+        <!-- Airframe Header Summary (Shown on Fighter, Upgrades & Livery tabs) -->
+        <div class="dock-jet-header" id="dock-jet-header">
+          <div class="dock-jet-topline">
+            <span class="mono-dim" id="carousel-jet-counter">01 / 05</span>
+            <div id="carousel-jet-action-slot"></div>
+          </div>
+          <h2 class="dock-jet-name" id="carousel-jet-name">Falcon F-22</h2>
+          <div class="dock-jet-role" id="carousel-jet-role">BALANCED AIR SUPERIORITY</div>
+        </div>
+
+        <!-- TAB 1: AIRFRAME SPECS & TELEMETRY -->
+        <div class="tab-panel" id="tab-view-fighter">
+          <div class="section-label">
+            <span>FLIGHT PERFORMANCE</span>
+            <span class="mono-dim" id="fighter-armament-tag">20MM ROTARY</span>
+          </div>
+          <div class="telemetry-list" id="fighter-telemetry-bars">
+            <!-- Populated dynamically -->
+          </div>
+          <div class="spec-grid-mini" id="fighter-spec-grid">
+            <!-- Compact raw numbers populated dynamically -->
+          </div>
+        </div>
+
+        <!-- TAB 2: AVIONICS & ENGINE UPGRADES -->
+        <div class="tab-panel hidden" id="tab-view-upgrades">
+          <div class="section-label">
+            <span>AIRFRAME SYSTEMS</span>
+            <span class="amber-text mono-tag" id="upgrade-jet-name">FALCON</span>
+          </div>
+          <div class="upgrades-slim-list" id="upgrades-grid-container">
+            <!-- Populated dynamically -->
+          </div>
+          <div class="upgrade-preview-banner" id="upgrade-hover-preview">HOVER SYSTEM TO PREVIEW NEXT TIER</div>
+        </div>
+
+        <!-- TAB 3: LIVERY, TRACERS & SQUADRON -->
+        <div class="tab-panel hidden" id="tab-view-paint">
+          <div class="custom-block">
+            <div class="section-label">
+              <span>CAMO SCHEME</span>
+              <span class="amber-text mono-tag" id="livery-active-name">AIR SUPERIORITY GREY</span>
             </div>
-          </div>
-          <button id="btn-next-jet" class="carousel-nav-btn" title="Next Aircraft [D / →]">NEXT ▶</button>
-        </div>
-        <!-- Quick Jet Picker Pills -->
-        <div class="jet-pill-row" id="jet-pill-row">
-          <!-- Injected dynamically via JS -->
-        </div>
-      </div>
-
-      <!-- Left Wing Dock: Upgrades (Workshop) or Pilot Dossier (Pilot Mode) -->
-      <aside class="hangar-wing hangar-wing-left" id="hangar-wing-left">
-        <!-- View 1: Workshop Upgrades -->
-        <div id="wing-left-workshop" class="wing-content">
-          <div class="panel-section-title">
-            <span>⚡ AIRFRAME UPGRADES</span>
-            <span id="upgrade-jet-name" style="color:#00ff9d;font-family:monospace;font-size:9.5px;white-space:nowrap;letter-spacing:0.04em;">FALCON</span>
-          </div>
-          <div class="upgrades-compact-list" id="upgrades-grid-container">
-            <!-- 5 Upgrades injected dynamically via JS -->
-          </div>
-        </div>
-
-        <!-- View 2: Pilot Callsign & Squadron Assignment -->
-        <div id="wing-left-pilot" class="wing-content hidden">
-          <div class="panel-section-title">🎖️ PILOT CALLSIGN &amp; SQUADRON</div>
-          <div style="margin-bottom:12px;">
-            <span class="custom-sublabel">Combat Pilot Callsign</span>
-            <input id="input-callsign" class="callsign-input" type="text" maxlength="16" placeholder="Enter Callsign..." value="NightHawk_IN" />
-          </div>
-          <div>
-            <span class="custom-sublabel">Deploy CTF Squadron</span>
-            <div class="btn-row" style="margin-top:6px; flex-direction:column; gap:8px;">
-              <button id="opt-team-blue" class="opt-btn active-blue" style="width:100%;">BLUE SQUADRON<span style="font-size:9.5px;display:block;opacity:0.8;margin-top:2px;">South Fortress Base</span></button>
-              <button id="opt-team-red" class="opt-btn" style="width:100%;">RED SQUADRON<span style="font-size:9.5px;display:block;opacity:0.8;margin-top:2px;">North Citadel Base</span></button>
-            </div>
-          </div>
-        </div>
-      </aside>
-
-      <!-- Right Wing Dock: Custom Paint & Tracers (Workshop) or Combat Log (Pilot Mode) -->
-      <aside class="hangar-wing hangar-wing-right" id="hangar-wing-right">
-        <!-- View 1: Custom Paint & Cannon Tracers -->
-        <div id="wing-right-workshop" class="wing-content">
-          <div class="panel-section-title">
-            <span>🎨 CUSTOM PAINT &amp; TRACERS</span>
-            <span style="color:#38bdf8;font-family:monospace;font-size:10px;">LIVE 3D PREVIEW</span>
-          </div>
-
-          <div>
-            <span class="custom-sublabel">Aircraft Livery Camo &amp; Neon Trim</span>
             <div class="livery-row" id="livery-group">
-              <div class="livery-swatch active" data-livery="0" style="background:linear-gradient(135deg,#00ff9d,#0284c7);" title="Cyber Emerald"></div>
-              <div class="livery-swatch" data-livery="1" style="background:linear-gradient(135deg,#38bdf8,#6366f1);" title="Ion Cyan"></div>
-              <div class="livery-swatch" data-livery="2" style="background:linear-gradient(135deg,#ff3b47,#f97316);" title="Crimson Nova"></div>
-              <div class="livery-swatch" data-livery="3" style="background:linear-gradient(135deg,#1e293b,#0f172a);" title="Stealth Onyx"></div>
-              <div class="livery-swatch" data-livery="4" style="background:linear-gradient(135deg,#fbbf24,#ea580c);" title="Solar Gold"></div>
-              <div class="livery-swatch" data-livery="5" style="background:linear-gradient(135deg,#f8fafc,#94a3b8);" title="Arctic Ghost"></div>
+              <div class="livery-swatch active" data-livery="0" style="background:linear-gradient(135deg,#6c737d,#d9822b);" title="Air Superiority Grey"></div>
+              <div class="livery-swatch" data-livery="1" style="background:linear-gradient(135deg,#4f5d6b,#5e97d1);" title="Fleet Naval Blue"></div>
+              <div class="livery-swatch" data-livery="2" style="background:linear-gradient(135deg,#454141,#c9443e);" title="Aggressor Crimson"></div>
+              <div class="livery-swatch" data-livery="3" style="background:linear-gradient(135deg,#232528,#6a6f78);" title="Nighthawk Stealth"></div>
+              <div class="livery-swatch" data-livery="4" style="background:linear-gradient(135deg,#8c7d64,#cfa03e);" title="Desert Flanker"></div>
+              <div class="livery-swatch" data-livery="5" style="background:linear-gradient(135deg,#d1d5d9,#456280);" title="Arctic Splinter"></div>
             </div>
           </div>
 
-          <div style="margin-top:6px;">
-            <span class="custom-sublabel">20mm Cannon Tracer Round Color</span>
+          <div class="custom-block">
+            <div class="section-label">
+              <span>20MM TRACER ROUND</span>
+              <span class="amber-text mono-tag" id="tracer-active-name">INCENDIARY GOLD</span>
+            </div>
             <div class="livery-row" id="tracer-group">
-              <div class="livery-swatch active" data-tracer="0" style="background:#38bdf8;" title="Ion Cyan"></div>
-              <div class="livery-swatch" data-tracer="1" style="background:#00ff9d;" title="Laser Emerald"></div>
-              <div class="livery-swatch" data-tracer="2" style="background:#ff3b47;" title="Crimson Fury"></div>
-              <div class="livery-swatch" data-tracer="3" style="background:#fbbf24;" title="Solar Amber"></div>
-              <div class="livery-swatch" data-tracer="4" style="background:#d946ef;" title="Neon Violet"></div>
-              <div class="livery-swatch" data-tracer="5" style="background:#ffffff;" title="Pure White"></div>
+              <div class="livery-swatch active" data-tracer="0" style="background:#f0d284;" title="Incendiary Gold"></div>
+              <div class="livery-swatch" data-tracer="1" style="background:#e07b28;" title="Tracer Amber"></div>
+              <div class="livery-swatch" data-tracer="2" style="background:#c9443e;" title="Combat Crimson"></div>
+              <div class="livery-swatch" data-tracer="3" style="background:#52c468;" title="Phosphor Green"></div>
+              <div class="livery-swatch" data-tracer="4" style="background:#5e97d1;" title="Tactical Cobalt"></div>
+              <div class="livery-swatch" data-tracer="5" style="background:#f2f0eb;" title="Magnesium White"></div>
             </div>
           </div>
 
-          <!-- Quick Flight Controls Reminder -->
-          <div class="controls-micro-box desktop-only">
-            <div class="micro-guide-grid">
-              <div><span class="key-pill">Mouse</span> Aim Target</div>
-              <div><span class="key-pill">Space</span> 20mm Rotary</div>
-              <div><span class="key-pill">W / Shift</span> Throttle / Nitro</div>
-              <div><span class="key-pill">A / D</span> Coordinated Roll</div>
-              <div><span class="key-pill">S</span> Airbrake G-Turn</div>
-              <div><span class="key-pill">G / X</span> Drop Stolen Flag</div>
+          <div class="custom-block">
+            <div class="section-label"><span>ASSIGNED SQUADRON</span></div>
+            <div class="squad-toggle-grid">
+              <button id="opt-team-blue" class="squad-btn active-blue">BLUE SQUADRON<span>South Airbase</span></button>
+              <button id="opt-team-red" class="squad-btn">RED SQUADRON<span>North Citadel</span></button>
             </div>
-          </div>
-
-          <!-- CTF Rules & Capture Instructions -->
-          <div style="margin-top:10px;padding:9px 12px;background:rgba(56,189,248,0.06);border:1px solid rgba(56,189,248,0.22);border-radius:6px;font-size:11px;line-height:1.45;color:#94a3b8;">
-            <div style="font-weight:700;color:#38bdf8;margin-bottom:4px;display:flex;align-items:center;gap:6px;">
-              <span>🚩 HOW TO CAPTURE &amp; RULES (+1,000 PTS)</span>
-            </div>
-            <div>• <b>Snatch Flag:</b> Fly into the enemy base to grab their team flag.</div>
-            <div>• <b>Dual-Flag Rule:</b> Fly the flag back to your home base. Both flags must be at your base to capture!</div>
-            <div>• <b>Flag Recovery:</b> If the enemy steals your flag, hunt down their carrier and return your flag first!</div>
           </div>
         </div>
 
-        <!-- View 2: Career Combat Records & Accolades -->
-        <div id="wing-right-pilot" class="wing-content hidden">
-          <div class="panel-section-title">📊 CAREER FLIGHT LOG &amp; ACCOLADES</div>
-          <div class="stats-summary-grid">
-            <div class="stat-box"><div class="val" id="stat-sorties">0</div><div class="lbl">Sorties Flown</div></div>
-            <div class="stat-box"><div class="val" id="stat-wins">0</div><div class="lbl">Victories</div></div>
-            <div class="stat-box"><div class="val" id="stat-winrate">0%</div><div class="lbl">Win Rate</div></div>
-            <div class="stat-box"><div class="val" id="stat-kills">0</div><div class="lbl">Total Kills</div></div>
-            <div class="stat-box"><div class="val" id="stat-kd">0.0</div><div class="lbl">K / D Ratio</div></div>
-            <div class="stat-box"><div class="val" id="stat-caps">0</div><div class="lbl">Flags Captured</div></div>
+        <!-- TAB 4: PILOT DOSSIER -->
+        <div class="tab-panel hidden" id="tab-view-pilot">
+          <div class="custom-block">
+            <div class="section-label"><span>PILOT CALLSIGN</span></div>
+            <input id="input-callsign" class="callsign-input" type="text" maxlength="16" placeholder="Callsign..." value="NightHawk_IN" />
+          </div>
+
+          <div class="dossier-rank-card">
+            <div class="dossier-rank-top">
+              <span class="dossier-rank-badge" id="dossier-rank-badge">[C-1]</span>
+              <span class="dossier-rank-title" id="dossier-rank-name">CADET I</span>
+              <span class="mono-dim" id="dossier-xp-next">+600 XP TO NEXT</span>
+            </div>
+            <div class="xp-bar-container dossier-xp-track"><div id="dossier-xp-fill" class="xp-bar-fill" style="width:0%;"></div></div>
+            <div class="dossier-xp-meta">
+              <span id="dossier-xp-cur">0 XP TOTAL</span>
+              <span id="dossier-next-rank-name">CADET II</span>
+            </div>
+          </div>
+
+          <div class="custom-block">
+            <div class="section-label"><span>CAREER RECORD</span></div>
+            <div class="stats-summary-grid">
+              <div class="stat-box"><div class="val" id="stat-sorties">0</div><div class="lbl">Sorties</div></div>
+              <div class="stat-box"><div class="val" id="stat-wins">0</div><div class="lbl">Wins</div></div>
+              <div class="stat-box"><div class="val" id="stat-winrate">0%</div><div class="lbl">Win Rate</div></div>
+              <div class="stat-box"><div class="val" id="stat-kills">0</div><div class="lbl">Kills</div></div>
+              <div class="stat-box"><div class="val" id="stat-kd">0.0</div><div class="lbl">K / D</div></div>
+              <div class="stat-box"><div class="val" id="stat-caps">0</div><div class="lbl">Captures</div></div>
+              <div class="stat-box"><div class="val" id="stat-best">0</div><div class="lbl">Best Sortie</div></div>
+              <div class="stat-box"><div class="val" id="stat-acc">0%</div><div class="lbl">Accuracy</div></div>
+            </div>
           </div>
         </div>
       </aside>
 
-      <!-- Center 3D Orbit Drag Hint Pill -->
-      <div class="hangar-orbit-hint">
-        <span>🖱️ DRAG TO ROTATE AIRCRAFT IN 3D</span>
+      <!-- Expandable Briefing & Controls Drawer ([?] BRIEFING) -->
+      <aside id="hangar-briefing-drawer" class="hangar-briefing-drawer hidden">
+        <div class="section-label">
+          <span>FLIGHT CONTROLS &amp; CTF RULES</span>
+          <button id="btn-close-briefing" class="hud-mini-btn">CLOSE</button>
+        </div>
+        <div class="controls-matrix">
+          <div><span class="key-pill">MOUSE</span><span>Steer Aircraft</span></div>
+          <div><span class="key-pill">LMB / SPACE</span><span>20mm Rotary Cannon</span></div>
+          <div><span class="key-pill">W / SHIFT</span><span>Throttle / Afterburner</span></div>
+          <div><span class="key-pill">A / D</span><span>Roll Left / Right</span></div>
+          <div><span class="key-pill">S</span><span>Airbrake High-G Turn</span></div>
+          <div><span class="key-pill">G / X</span><span>Drop Carried Flag</span></div>
+          <div><span class="key-pill">C</span><span>Toggle Cockpit View</span></div>
+          <div><span class="key-pill">TAB / P</span><span>Scoreboard &amp; Pause</span></div>
+        </div>
+        <div class="ctf-rules-compact">
+          <div><b>Capture:</b> Fly over the enemy base flag, then return to your home runway.</div>
+          <div><b>Dual-Flag Rule:</b> Both flags must be at base to score (+1,000 PTS).</div>
+          <div><b>Recovery:</b> Down the enemy carrier and fly through the dropped flag to recover it.</div>
+        </div>
+      </aside>
+
+      <!-- Bottom-Left Horizontal Fleet Strip -->
+      <div class="hangar-fleet-bar" id="hangar-fleet-bar">
+        <button id="btn-prev-jet" class="fleet-step-btn" title="Previous Airframe [A]">&lsaquo; A</button>
+        <div class="fleet-strip" id="jet-pill-row">
+          <!-- Populated dynamically -->
+        </div>
+        <button id="btn-next-jet" class="fleet-step-btn" title="Next Airframe [D]">D &rsaquo;</button>
       </div>
 
-      <!-- Bottom Launch Floating Dock -->
-      <footer class="hangar-bottom-dock">
-        <button id="btn-launch" class="primary-btn hangar-launch-btn">▶ DEPLOY TO BATTLE</button>
-        <div class="hangar-launch-subtitle">
-          FIRST TO 3 CAPTURES • DEFEND YOUR BASE • SUDDEN DEATH IF TIED AT 10:00
+      <!-- Bottom-Right Launch Block -->
+      <footer class="hangar-launch-dock">
+        <div class="bay-viewport-bar">
+          <button type="button" class="bay-tool-btn active" data-cam-preset="3/4">3/4</button>
+          <button type="button" class="bay-tool-btn" data-cam-preset="NOSE">NOSE</button>
+          <button type="button" class="bay-tool-btn" data-cam-preset="TOP">TOP</button>
+          <button type="button" class="bay-tool-btn" data-cam-preset="AFT">AFT</button>
+          <span class="bay-tool-sep"></span>
+          <button type="button" class="bay-tool-btn" data-bay-test="ab" title="Toggle Afterburner Plumes">AB TEST</button>
+          <button type="button" class="bay-tool-btn" data-bay-test="tracer" title="Test Selected Tracer Round">TRACERS</button>
         </div>
+        <span class="orbit-caption">DRAG TO ORBIT &bull; SCROLL TO ZOOM</span>
+        <button id="btn-launch" class="primary-btn hangar-launch-btn">DEPLOY</button>
+        <span class="launch-meta">5V5 CTF &bull; FIRST TO 3 CAPTURES</span>
       </footer>
     </div>
 
-    <!-- PAUSE / LIVE CTF SCOREBOARD OVERLAY -->
-    <div id="pause-screen" class="overlay-screen hidden">
-      <div class="panel-card">
-        <div class="title-header">
+    <!-- ============================================================
+         MID-MATCH RESPAWN WORKSHOP (USES MATCHING ASYMMETRIC LAYOUT)
+    ============================================================ -->
+    <div id="respawn-hangar-screen" class="overlay-screen hangar-screen hidden tab-fighter-active">
+      <header class="hangar-top-bar">
+        <div class="hangar-brand">
+          <span class="hangar-brand-mark"></span>
+          <span class="hangar-game-title">FIELD <span>REARMAMENT</span></span>
+          <div class="live-match-chip">
+            <span id="respawn-hangar-match-score">BLUE 0 — 0 RED</span>
+            <span class="amber-text" id="respawn-hangar-time-badge">09:45</span>
+          </div>
+        </div>
+
+        <nav class="hangar-nav-tabs" id="respawn-hangar-tabs">
+          <button class="respawn-tab-btn active" data-tab="fighter">AIRFRAME</button>
+          <button class="respawn-tab-btn" data-tab="upgrades">UPGRADES</button>
+          <button class="respawn-tab-btn" data-tab="paint">LIVERY</button>
+        </nav>
+
+        <div class="hangar-utility-cluster">
+          <div class="credits-chip">
+            <span class="chip-lbl">PTS</span>
+            <span id="respawn-hangar-credits-val">600</span>
+          </div>
+          <button id="btn-respawn-hangar-spectate" class="hud-mini-btn">SPECTATE</button>
+        </div>
+      </header>
+
+      <aside class="hangar-dock-left" id="respawn-dock-left">
+        <div class="dock-jet-header">
+          <div class="dock-jet-topline">
+            <span class="mono-dim" id="respawn-carousel-counter">01 / 05</span>
+            <div id="respawn-carousel-action-slot"></div>
+          </div>
+          <h2 class="dock-jet-name" id="respawn-carousel-name">Falcon F-22</h2>
+          <div class="dock-jet-role" id="respawn-carousel-role">BALANCED AIR SUPERIORITY</div>
+        </div>
+
+        <div class="tab-panel" id="respawn-tab-fighter">
+          <div class="section-label"><span>FLIGHT PERFORMANCE</span></div>
+          <div class="telemetry-list" id="respawn-telemetry-bars"></div>
+        </div>
+
+        <div class="tab-panel hidden" id="respawn-tab-upgrades">
+          <div class="section-label">
+            <span>AIRFRAME SYSTEMS</span>
+            <span class="amber-text mono-tag" id="respawn-upgrade-jet-name">FALCON</span>
+          </div>
+          <div class="upgrades-slim-list" id="respawn-upgrades-list"></div>
+          <div class="upgrade-preview-banner" id="respawn-upgrade-preview">HOVER SYSTEM TO PREVIEW NEXT TIER</div>
+        </div>
+
+        <div class="tab-panel hidden" id="respawn-tab-paint">
+          <div class="custom-block">
+            <div class="section-label"><span>CAMO SCHEME</span></div>
+            <div class="livery-row" id="respawn-livery-group">
+              <div class="livery-swatch active" data-livery="0" style="background:linear-gradient(135deg,#6c737d,#d9822b);" title="Air Superiority Grey"></div>
+              <div class="livery-swatch" data-livery="1" style="background:linear-gradient(135deg,#4f5d6b,#5e97d1);" title="Fleet Naval Blue"></div>
+              <div class="livery-swatch" data-livery="2" style="background:linear-gradient(135deg,#454141,#c9443e);" title="Aggressor Crimson"></div>
+              <div class="livery-swatch" data-livery="3" style="background:linear-gradient(135deg,#232528,#6a6f78);" title="Nighthawk Stealth"></div>
+              <div class="livery-swatch" data-livery="4" style="background:linear-gradient(135deg,#8c7d64,#cfa03e);" title="Desert Flanker"></div>
+              <div class="livery-swatch" data-livery="5" style="background:linear-gradient(135deg,#d1d5d9,#456280);" title="Arctic Splinter"></div>
+            </div>
+          </div>
+          <div class="custom-block">
+            <div class="section-label"><span>20MM TRACER ROUND</span></div>
+            <div class="livery-row" id="respawn-tracer-group">
+              <div class="livery-swatch active" data-tracer="0" style="background:#f0d284;" title="Incendiary Gold"></div>
+              <div class="livery-swatch" data-tracer="1" style="background:#e07b28;" title="Tracer Amber"></div>
+              <div class="livery-swatch" data-tracer="2" style="background:#c9443e;" title="Combat Crimson"></div>
+              <div class="livery-swatch" data-tracer="3" style="background:#52c468;" title="Phosphor Green"></div>
+              <div class="livery-swatch" data-tracer="4" style="background:#5e97d1;" title="Tactical Cobalt"></div>
+              <div class="livery-swatch" data-tracer="5" style="background:#f2f0eb;" title="Magnesium White"></div>
+            </div>
+          </div>
+        </div>
+      </aside>
+
+      <div class="hangar-fleet-bar">
+        <button id="btn-respawn-prev-jet" class="fleet-step-btn" title="Previous [A]">&lsaquo; A</button>
+        <div class="fleet-strip" id="respawn-jet-pills"></div>
+        <button id="btn-respawn-next-jet" class="fleet-step-btn" title="Next [D]">D &rsaquo;</button>
+      </div>
+
+      <footer class="hangar-launch-dock">
+        <div class="bay-viewport-bar">
+          <button type="button" class="bay-tool-btn active" data-cam-preset="3/4">3/4</button>
+          <button type="button" class="bay-tool-btn" data-cam-preset="NOSE">NOSE</button>
+          <button type="button" class="bay-tool-btn" data-cam-preset="TOP">TOP</button>
+          <button type="button" class="bay-tool-btn" data-cam-preset="AFT">AFT</button>
+          <span class="bay-tool-sep"></span>
+          <button type="button" class="bay-tool-btn" data-bay-test="ab" title="Toggle Afterburner Plumes">AB TEST</button>
+          <button type="button" class="bay-tool-btn" data-bay-test="tracer" title="Test Selected Tracer Round">TRACERS</button>
+        </div>
+        <span class="orbit-caption">DRAG TO ORBIT &bull; SCROLL TO ZOOM</span>
+        <button id="btn-respawn-launch" class="primary-btn hangar-launch-btn">DEPLOY</button>
+        <span class="launch-meta" id="respawn-launch-subtitle">READY TO RE-ENTER SORTIE</span>
+      </footer>
+    </div>
+
+    <!-- ============================================================
+         SETTINGS MODAL (TACTICAL CUSTOM CONTROLS)
+    ============================================================ -->
+    <div id="settings-modal" class="hidden">
+      <div class="settings-panel tactical-modal">
+        <div class="modal-head">
           <div>
-            <h1 id="pause-title">CAPTURE THE FLAG // TACTICAL BOARD</h1>
-            <div class="subtitle" id="pause-subtitle">48KM MULTI-BIOME MEGA CANYON // FIRST TO 3 CAPTURES (10:00 TIME CAP)</div>
+            <div class="modal-eyebrow">SYSTEM</div>
+            <div class="modal-title">AVIONICS &amp; OPTIONS</div>
           </div>
-          <div id="team-score-banner" style="font-size:15px;font-weight:800;font-family:monospace;color:#38bdf8;">BLUE 0 — 0 RED</div>
+          <button id="btn-close-settings" class="hud-mini-btn">CLOSE [ESC]</button>
         </div>
 
-        <div style="background:rgba(56,189,248,0.06);border:1px solid rgba(56,189,248,0.22);border-radius:6px;padding:8px 14px;margin-bottom:12px;display:flex;flex-wrap:wrap;gap:16px;font-size:11.5px;color:#94a3b8;align-items:center;">
-          <div><span style="color:#fbbf24;font-weight:700;">🏆 CAPTURE REWARD:</span> +1,000 PTS</div>
-          <div><span style="color:#38bdf8;font-weight:700;">⚡ DUAL-FLAG RULE:</span> Both flags must be at your base to score.</div>
-          <div><span style="color:#ff3b47;font-weight:700;">🛡️ RECOVER:</span> If your flag is stolen, shoot down the carrier and return it before you can capture!</div>
-        </div>
-
-        <div style="max-height:52vh;overflow-y:auto;">
-          <table class="score-table">
-            <thead>
-              <tr>
-                <th>#</th>
-                <th>Pilot</th>
-                <th>Team</th>
-                <th>Jet</th>
-                <th>Score</th>
-                <th>Captures</th>
-                <th>Returns</th>
-                <th>K / D</th>
-                <th>Status</th>
-              </tr>
-            </thead>
-            <tbody id="scoreboard-body"></tbody>
-          </table>
-        </div>
-
-        <div class="launch-row" id="pause-buttons-row">
-          <div style="display:flex;gap:10px;flex-wrap:wrap;">
-            <button id="btn-resume" class="primary-btn">RETURN TO FLIGHT</button>
-            <button id="btn-restart" class="secondary-btn">NEW CTF MATCH</button>
-            <button id="btn-return-menu" class="secondary-btn">HANGAR</button>
-            <button id="btn-pause-settings" class="secondary-btn">SETTINGS ⚙️</button>
+        <div class="setting-row">
+          <span>Mouse Aim Sensitivity</span>
+          <div class="slider-wrap">
+            <input type="range" id="set-mouse-sens" class="setting-slider" min="0.5" max="2.5" step="0.1" value="1.0" />
+            <span id="lbl-mouse-sens" class="slider-val">1.0x</span>
           </div>
-          <div style="font-size:11.5px;color:#94a3b8;">Tap <b>TAB</b>, <b>P</b>, or <b>ESC</b> to close</div>
+        </div>
+
+        <div class="setting-row">
+          <span>Invert Pitch (Y-Axis)</span>
+          <button id="set-invert-y" class="tactile-toggle" type="button" aria-pressed="false">OFF</button>
+        </div>
+
+        <div class="setting-row">
+          <span>Music Volume</span>
+          <div class="slider-wrap">
+            <input type="range" id="set-music-vol" class="setting-slider" min="0" max="1" step="0.05" value="0.85" />
+            <span id="lbl-music-vol" class="slider-val">85%</span>
+          </div>
+        </div>
+
+        <div class="setting-row">
+          <span>Flight SFX Volume</span>
+          <div class="slider-wrap">
+            <input type="range" id="set-sfx-vol" class="setting-slider" min="0" max="1" step="0.05" value="0.85" />
+            <span id="lbl-sfx-vol" class="slider-val">85%</span>
+          </div>
+        </div>
+
+        <div class="setting-row">
+          <span>Render Quality</span>
+          <div class="segmented-group" id="set-graphics-group">
+            <button type="button" class="seg-btn" data-quality="LOW">LOW</button>
+            <button type="button" class="seg-btn" data-quality="MEDIUM">MED</button>
+            <button type="button" class="seg-btn active" data-quality="HIGH">HIGH</button>
+          </div>
+        </div>
+
+        <div class="setting-row">
+          <span>HUD Reticle Theme</span>
+          <div class="segmented-group" id="set-hud-color-group">
+            <button type="button" class="seg-btn active" data-hud-color="GREEN">GREEN</button>
+            <button type="button" class="seg-btn" data-hud-color="AMBER">AMBER</button>
+            <button type="button" class="seg-btn" data-hud-color="ICE">ICE</button>
+          </div>
+        </div>
+
+        <div class="setting-row">
+          <span>Show FPS Counter</span>
+          <button id="set-show-fps" class="tactile-toggle" type="button" aria-pressed="false">OFF</button>
+        </div>
+
+        <div class="modal-foot">
+          <button id="btn-replay-tutorial" class="secondary-btn">REPLAY TUTORIAL</button>
+          <button id="btn-reset-career" class="secondary-btn danger-btn">RESET CAREER</button>
         </div>
       </div>
     </div>
 
-    <!-- RESULTS / MATCH VICTORY OVERLAY -->
-    <div id="results-screen" class="overlay-screen hidden">
-      <div class="panel-card">
-        <div class="title-header">
+    <!-- ============================================================
+         PAUSE / SPLIT SQUADRON SCOREBOARD
+    ============================================================ -->
+    <div id="pause-screen" class="overlay-screen modal-backdrop hidden">
+      <div class="board-shell">
+        <div class="board-head">
           <div>
-            <h1 id="result-headline">BLUE SQUADRON VICTORY!</h1>
-            <div class="subtitle" id="result-subline">CAPTURE THE FLAG MATCH COMPLETE</div>
+            <div class="modal-eyebrow">SORTIE PAUSED</div>
+            <h1 id="pause-title">CANYON SECTOR — CAPTURE THE FLAG</h1>
           </div>
-          <div id="result-team-standing" style="font-size:16px;font-weight:800;font-family:monospace;color:#fbbf24;">BLUE 3 — 1 RED</div>
+          <div class="board-score-cluster">
+            <div id="team-score-banner" class="board-score-readout">BLUE 0 — 0 RED</div>
+            <div class="board-rule-line" id="pause-subtitle">First to 3 captures &bull; 10:00 cap &bull; Both flags required at base</div>
+          </div>
         </div>
 
-        <!-- Career Rewards & Promotion Progress -->
-        <div id="results-rewards-card" style="background:rgba(15,23,42,0.85);border:1px solid rgba(56,189,248,0.35);border-radius:8px;padding:12px 16px;margin-bottom:14px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;">
+        <div class="split-scoreboard-grid">
+          <div class="squad-board blue-board">
+            <div class="squad-board-hdr"><span class="blue-text">BLUE SQUADRON</span><span class="mono-dim">SOUTH BASE</span></div>
+            <table class="score-table">
+              <thead>
+                <tr><th>#</th><th>PILOT</th><th>JET</th><th>PTS</th><th>CAP</th><th>K/D</th><th>STATUS</th></tr>
+              </thead>
+              <tbody id="scoreboard-blue-body"></tbody>
+            </table>
+          </div>
+          <div class="squad-board red-board">
+            <div class="squad-board-hdr"><span class="red-text">RED SQUADRON</span><span class="mono-dim">NORTH CITADEL</span></div>
+            <table class="score-table">
+              <thead>
+                <tr><th>#</th><th>PILOT</th><th>JET</th><th>PTS</th><th>CAP</th><th>K/D</th><th>STATUS</th></tr>
+              </thead>
+              <tbody id="scoreboard-red-body"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="board-foot">
+          <div class="board-actions">
+            <button id="btn-resume" class="primary-btn">RESUME FLIGHT</button>
+            <button id="btn-restart" class="secondary-btn">RESTART</button>
+            <button id="btn-return-menu" class="secondary-btn">HANGAR</button>
+            <button id="btn-pause-settings" class="secondary-btn">SETTINGS</button>
+          </div>
+          <span class="mono-dim">[TAB] / [P] / [ESC] TO RESUME</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============================================================
+         RESULTS / AFTER-ACTION DEBRIEF OVERLAY
+    ============================================================ -->
+    <div id="results-screen" class="overlay-screen modal-backdrop hidden">
+      <div class="board-shell">
+        <div class="board-head">
           <div>
-            <div style="font-size:11px;color:#94a3b8;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;">SORTIE COMBAT REWARDS</div>
-            <div style="font-size:18px;font-weight:800;color:#00ff9d;display:flex;gap:16px;margin-top:4px;">
-              <span id="res-xp-earned">+0 XP</span>
-              <span id="res-credits-earned" style="color:#fbbf24;">+0 ₵</span>
-            </div>
+            <div class="modal-eyebrow" id="result-subline">SORTIE COMPLETE</div>
+            <h1 id="result-headline">BLUE SQUADRON VICTORY</h1>
           </div>
-          <div style="min-width:220px;">
-            <div style="display:flex;justify-content:space-between;font-size:11px;font-weight:700;color:#38bdf8;margin-bottom:4px;">
-              <span id="res-rank-name">CADET I</span>
-              <span id="res-rank-xp">0 / 600 XP</span>
-            </div>
-            <div class="xp-bar-container" style="width:100%;height:8px;">
-              <div id="res-xp-fill" class="xp-bar-fill" style="width:0%;"></div>
-            </div>
+          <div class="board-score-cluster">
+            <div id="result-team-standing" class="board-score-readout">BLUE 3 — 1 RED</div>
           </div>
         </div>
 
-        <div class="stats-summary-grid">
-          <div class="stat-box"><div class="val" id="res-score">0</div><div class="lbl">Match Score</div></div>
-          <div class="stat-box"><div class="val" id="res-captures">0</div><div class="lbl">Flag Captures</div></div>
-          <div class="stat-box"><div class="val" id="res-returns">0</div><div class="lbl">Flag Returns</div></div>
-          <div class="stat-box"><div class="val" id="res-kills">0</div><div class="lbl">Dogfight Kills</div></div>
-          <div class="stat-box"><div class="val" id="res-accuracy">0%</div><div class="lbl">Gun Accuracy</div></div>
-          <div class="stat-box"><div class="val" id="res-best">0</div><div class="lbl">Personal Best</div></div>
+        <div class="debrief-rewards-bar" id="results-rewards-card">
+          <div class="reward-earnings">
+            <span class="mono-dim">AWARDS</span>
+            <span id="res-xp-earned" class="sage-text mono-strong">+0 XP</span>
+            <span id="res-credits-earned" class="amber-text mono-strong">+0 PTS</span>
+          </div>
+          <div class="reward-stats-inline">
+            <div><span class="lbl">SCORE</span> <strong id="res-score">0</strong></div>
+            <div><span class="lbl">CAPS</span> <strong id="res-captures">0</strong></div>
+            <div><span class="lbl">RET</span> <strong id="res-returns">0</strong></div>
+            <div><span class="lbl">KILLS</span> <strong id="res-kills">0</strong></div>
+            <div><span class="lbl">ACC</span> <strong id="res-accuracy">0%</strong></div>
+            <div><span class="lbl">BEST</span> <strong id="res-best">0</strong></div>
+          </div>
+          <div class="reward-rank-progress">
+            <div class="reward-rank-labels">
+              <span id="res-rank-name">[C-1] CADET I</span>
+              <span id="res-rank-xp" class="mono-dim">0 / 600 XP</span>
+            </div>
+            <div class="xp-bar-container" style="width:180px;"><div id="res-xp-fill" class="xp-bar-fill" style="width:0%;"></div></div>
+          </div>
         </div>
 
-        <div style="max-height:36vh;overflow-y:auto;">
-          <table class="score-table">
-            <thead>
-              <tr>
-                <th>#</th>
-                <th>Pilot</th>
-                <th>Team</th>
-                <th>Jet</th>
-                <th>Score</th>
-                <th>Captures</th>
-                <th>Returns</th>
-                <th>K / D</th>
-                <th>Status</th>
-              </tr>
-            </thead>
-            <tbody id="results-table-body"></tbody>
-          </table>
+        <div class="split-scoreboard-grid">
+          <div class="squad-board blue-board">
+            <div class="squad-board-hdr"><span class="blue-text">BLUE SQUADRON</span></div>
+            <table class="score-table">
+              <thead>
+                <tr><th>#</th><th>PILOT</th><th>JET</th><th>PTS</th><th>CAP</th><th>K/D</th><th>STATUS</th></tr>
+              </thead>
+              <tbody id="results-blue-body"></tbody>
+            </table>
+          </div>
+          <div class="squad-board red-board">
+            <div class="squad-board-hdr"><span class="red-text">RED SQUADRON</span></div>
+            <table class="score-table">
+              <thead>
+                <tr><th>#</th><th>PILOT</th><th>JET</th><th>PTS</th><th>CAP</th><th>K/D</th><th>STATUS</th></tr>
+              </thead>
+              <tbody id="results-red-body"></tbody>
+            </table>
+          </div>
         </div>
 
-        <div class="launch-row">
-          <div style="display:flex;gap:10px;flex-wrap:wrap;">
-            <button id="btn-play-again" class="primary-btn">PLAY NEXT MATCH ▶</button>
+        <div class="board-foot">
+          <div class="board-actions">
+            <button id="btn-play-again" class="primary-btn">NEXT SORTIE</button>
             <button id="btn-results-menu" class="secondary-btn">RETURN TO HANGAR</button>
           </div>
         </div>

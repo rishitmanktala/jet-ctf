@@ -75,24 +75,24 @@
     }
 
     buildLightingAndSky() {
-      this.scene.fog = new THREE.FogExp2(0x07152c, 0.000028);
+      this.scene.fog = new THREE.FogExp2(0x7c90a6, 0.000024);
 
-      const hemiLight = new THREE.HemisphereLight(0x628fd4, 0x0c192e, 0.94);
-      this.scene.add(hemiLight);
+      this.hemiLight = new THREE.HemisphereLight(0xb8c8da, 0x332d26, 0.96);
+      this.scene.add(this.hemiLight);
 
-      const sunLight = new THREE.DirectionalLight(0xdbeafe, 1.22);
-      sunLight.position.set(9200, 13500, -8200);
-      this.scene.add(sunLight);
+      this.sunLight = new THREE.DirectionalLight(0xffebd0, 1.38);
+      this.sunLight.position.set(11000, 9500, -9000);
+      this.scene.add(this.sunLight);
 
       const skyGeo = new THREE.SphereGeometry(44000, 32, 20);
       const skyMat = new THREE.ShaderMaterial({
         side: THREE.BackSide,
         depthWrite: false,
         uniforms: {
-          topColor: { value: new THREE.Color(0x020612) },
-          midColor: { value: new THREE.Color(0x0b224a) },
-          horizonColor: { value: new THREE.Color(0x1f4b85) },
-          sunDir: { value: sunLight.position.clone().normalize() }
+          topColor: { value: new THREE.Color(0x142438) },
+          midColor: { value: new THREE.Color(0x365273) },
+          horizonColor: { value: new THREE.Color(0x9eb0c2) },
+          sunDir: { value: this.sunLight.position.clone().normalize() }
         },
         vertexShader: `
           varying vec3 vWorldPos;
@@ -108,28 +108,14 @@
           uniform vec3 horizonColor;
           uniform vec3 sunDir;
           varying vec3 vWorldPos;
-          float hash(vec3 p) {
-            p = fract(p * 0.3183099 + 0.1);
-            p *= 17.0;
-            return fract(p.x * p.y * p.z * (p.x + p.y + p.z));
-          }
           void main() {
             vec3 dir = normalize(vWorldPos);
             float h = clamp(dir.y, 0.0, 1.0);
-            vec3 col = mix(horizonColor, midColor, smoothstep(0.0, 0.25, h));
-            col = mix(col, topColor, smoothstep(0.25, 0.86, h));
-            // Subtle aurora / atmospheric horizon glow
-            float aurora = sin(dir.x * 6.0 + dir.z * 4.0) * 0.5 + 0.5;
-            col += vec3(0.02, 0.14, 0.18) * aurora * smoothstep(0.02, 0.18, h) * (1.0 - smoothstep(0.18, 0.42, h));
-            if (h > 0.08) {
-              float s = hash(floor(dir * 420.0));
-              if (s > 0.9962) {
-                col += vec3(0.80, 0.92, 1.0) * ((s - 0.9962) / 0.0038) * smoothstep(0.08, 0.3, h);
-              }
-            }
-            float moonAmt = max(dot(dir, sunDir), 0.0);
-            col += vec3(0.32, 0.64, 1.0) * pow(moonAmt, 22.0) * 0.52;
-            col += vec3(0.96, 0.99, 1.0) * smoothstep(0.9980, 0.9995, moonAmt);
+            vec3 col = mix(horizonColor, midColor, smoothstep(0.0, 0.24, h));
+            col = mix(col, topColor, smoothstep(0.24, 0.86, h));
+            float sunAmt = max(dot(dir, sunDir), 0.0);
+            col += vec3(0.45, 0.28, 0.14) * pow(sunAmt, 8.0) * (1.0 - smoothstep(0.0, 0.45, h)) * 0.55;
+            col += vec3(0.95, 0.85, 0.68) * smoothstep(0.9982, 0.9995, sunAmt);
             gl_FragColor = vec4(col, 1.0);
           }
         `
@@ -159,30 +145,30 @@
         const inCanyonCorridor = Math.abs(x) < 1350 && Math.abs(z) < 5800;
 
         if (dBlue < 650) {
-          // Blue Fortress Airfield Plateau
-          r = 0.11; g = 0.25; b = 0.40;
+          // Blue Fortress Airfield Plateau (Concrete Slate)
+          r = 0.25; g = 0.29; b = 0.34;
         } else if (dRed < 650) {
-          // Red Citadel Airfield Plateau
-          r = 0.38; g = 0.14; b = 0.21;
+          // Red Citadel Airfield Plateau (Reddish Clay Concrete)
+          r = 0.34; g = 0.24; b = 0.23;
         } else if (h < 4) {
-          // Shallow Turquoise Lagoon Reefs
-          r = 0.06; g = 0.24; b = 0.36;
+          // Deep Maritime Coastal Reefs
+          r = 0.11; g = 0.21; b = 0.28;
         } else if (h < 26) {
-          // Warm Coastal Sand & Riverbanks
-          r = 0.34; g = 0.32; b = 0.26;
+          // Warm Coastal Sand & Gravel Banks
+          r = 0.44; g = 0.40; b = 0.32;
         } else if (inCanyonCorridor && h < 240) {
-          // Terracotta & Golden Sandstone Canyon Walls
-          const band = (Math.sin(h * 0.09) * 0.5 + 0.5) * 0.08;
-          r = 0.36 + band; g = 0.22 + band * 0.6; b = 0.18;
+          // Stratified Red-Brown Sandstone Canyon Walls
+          const band = (Math.sin(h * 0.09) * 0.5 + 0.5) * 0.07;
+          r = 0.40 + band; g = 0.29 + band * 0.6; b = 0.22;
         } else if (h < 195) {
-          // Lush Emerald Pine Forest & Highland Meadows
-          r = 0.08; g = 0.28; b = 0.20;
+          // Temperate Pine Forest & Highland Olive Brush
+          r = 0.16; g = 0.24; b = 0.16;
         } else if (h < 410) {
-          // Dark Slate Granite Cliffs
-          r = 0.20; g = 0.25; b = 0.34;
+          // Weathered Alpine Granite Cliffs
+          r = 0.30; g = 0.31; b = 0.33;
         } else {
-          // Snow-Capped Alpine Peaks
-          r = 0.66; g = 0.80; b = 0.96;
+          // Natural Snow-Capped Alpine Peaks
+          r = 0.78; g = 0.80; b = 0.83;
         }
         colors[i * 3] = r;
         colors[i * 3 + 1] = g;
@@ -201,10 +187,10 @@
       const oceanGeo = new THREE.PlaneGeometry(size * 1.4, size * 1.4, 56, 56);
       oceanGeo.rotateX(-Math.PI / 2);
       const oceanMat = new THREE.MeshPhongMaterial({
-        color: 0x052040,
-        emissive: 0x020c1d,
-        specular: 0x56ccf2,
-        shininess: 95,
+        color: 0x132b3e,
+        emissive: 0x06101a,
+        specular: 0xb8c7d4,
+        shininess: 85,
         transparent: true,
         opacity: 0.94
       });
@@ -218,10 +204,10 @@
         const baseGroup = new THREE.Group();
         baseGroup.position.set(pos.x, 180, pos.z);
 
-        const asphaltMat = new THREE.MeshLambertMaterial({ color: 0x1e293b });
-        const concreteMat = new THREE.MeshLambertMaterial({ color: 0x283548 });
+        const asphaltMat = new THREE.MeshLambertMaterial({ color: 0x222529 });
+        const concreteMat = new THREE.MeshLambertMaterial({ color: 0x3b4046 });
         const trimMat = new THREE.MeshBasicMaterial({ color: colorHex });
-        const amberMat = new THREE.MeshBasicMaterial({ color: 0xfbbf24 });
+        const amberMat = new THREE.MeshBasicMaterial({ color: 0xd9822b });
 
         // 1. Extended 1,100m Main Military Runway + Parallel Taxiway Apron
         const runway = new THREE.Mesh(new THREE.BoxGeometry(160, 2.2, 1100), asphaltMat);
@@ -324,20 +310,20 @@
         this.scene.add(baseGroup);
       };
 
-      buildBase(CONFIG.WORLD.blueBasePos, 0x38bdf8, true);
-      buildBase(CONFIG.WORLD.redBasePos, 0xff3b47, false);
+      buildBase(CONFIG.WORLD.blueBasePos, 0x4d82b8, true);
+      buildBase(CONFIG.WORLD.redBasePos, 0xc9443e, false);
     }
 
     buildHighAltitudeLandmarks() {
       // All bridges, arches, and viaducts maintain massive low-altitude clearance (460m–620m+)
       // so players can skim effortlessly through the lower canyon and water, while adding major visual landmarks!
-      const archMat = new THREE.MeshLambertMaterial({ color: 0x2d3a4b });
-      const steelMat = new THREE.MeshLambertMaterial({ color: 0x334155 });
-      const concreteMat = new THREE.MeshLambertMaterial({ color: 0x475569 });
-      const neonCyanMat = new THREE.MeshBasicMaterial({ color: 0x38bdf8 });
-      const neonGoldMat = new THREE.MeshBasicMaterial({ color: 0xfbbf24 });
-      const neonGreenMat = new THREE.MeshBasicMaterial({ color: 0x00ff9d });
-      const neonRedMat = new THREE.MeshBasicMaterial({ color: 0xff3b47 });
+      const archMat = new THREE.MeshLambertMaterial({ color: 0x363b42 });
+      const steelMat = new THREE.MeshLambertMaterial({ color: 0x2c3036 });
+      const concreteMat = new THREE.MeshLambertMaterial({ color: 0x4c5259 });
+      const neonCyanMat = new THREE.MeshBasicMaterial({ color: 0x4d82b8 });
+      const neonGoldMat = new THREE.MeshBasicMaterial({ color: 0xd9822b });
+      const neonGreenMat = new THREE.MeshBasicMaterial({ color: 0x62805e });
+      const neonRedMat = new THREE.MeshBasicMaterial({ color: 0xc9443e });
 
       // 1. High-Altitude Giant Canyon Arches (Spans at ~460m–580m altitude, 880m wide gap underneath!)
       const archPositions = [
@@ -429,7 +415,7 @@
       damWall.position.set(0, 340, 0);
       damGroup.add(damWall);
 
-      const spillwayMat = new THREE.MeshBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.55 });
+      const spillwayMat = new THREE.MeshBasicMaterial({ color: 0x5c7c99, transparent: true, opacity: 0.55 });
       for (const sx of [-550, -180, 180, 550]) {
         const chute = new THREE.Mesh(new THREE.BoxGeometry(140, 520, 205), spillwayMat);
         chute.position.set(sx, 260, 0);
@@ -469,7 +455,7 @@
         dishGroup.position.y = 140;
         const dishMesh = new THREE.Mesh(
           new THREE.ConeGeometry(65, 30, 12, 1, true),
-          new THREE.MeshBasicMaterial({ color: side < 0 ? 0x00ff9d : 0x38bdf8, wireframe: true })
+          new THREE.MeshBasicMaterial({ color: side < 0 ? 0xd9822b : 0x5e97d1, wireframe: true })
         );
         dishMesh.rotation.x = Math.PI * 0.35;
         dishGroup.add(dishMesh);
@@ -485,9 +471,9 @@
       c.height = 128;
       const ctx = c.getContext('2d');
       const grad = ctx.createRadialGradient(64, 64, 8, 64, 64, 60);
-      grad.addColorStop(0.0, 'rgba(95, 145, 210, 0.40)');
-      grad.addColorStop(0.45, 'rgba(48, 85, 148, 0.22)');
-      grad.addColorStop(1.0, 'rgba(15, 30, 60, 0.0)');
+      grad.addColorStop(0.0, 'rgba(232, 234, 236, 0.45)');
+      grad.addColorStop(0.45, 'rgba(185, 195, 206, 0.22)');
+      grad.addColorStop(1.0, 'rgba(130, 145, 162, 0.0)');
       ctx.fillStyle = grad;
       ctx.fillRect(0, 0, 128, 128);
 
@@ -563,8 +549,8 @@
         };
       };
 
-      this.flags.BLUE = createFlagObject('BLUE', CONFIG.WORLD.blueBasePos, 0x38bdf8);
-      this.flags.RED  = createFlagObject('RED',  CONFIG.WORLD.redBasePos,  0xff3b47);
+      this.flags.BLUE = createFlagObject('BLUE', CONFIG.WORLD.blueBasePos, 0x5e97d1);
+      this.flags.RED  = createFlagObject('RED',  CONFIG.WORLD.redBasePos,  0xc9443e);
     }
 
     resetFlags() {
@@ -609,7 +595,7 @@
             // Keep player's forward/rear camera 100% unobstructed when carrying the flag!
             flag.group.visible = false;
             if (Math.random() < 0.75) {
-              const col = teamKey === 'BLUE' ? 0x38bdf8 : 0xff3b47;
+              const col = teamKey === 'BLUE' ? 0x5e97d1 : 0xc9443e;
               for (const wx of [-7.0, 7.0]) {
                 _v1.set(wx, 0, 3.2).applyQuaternion(flag.carrier.mesh.quaternion).add(flag.carrier.mesh.position);
                 particles.spawnParticle(_v1, _v2.set(0, 0, 0), col, 1.1, 2.2, 0.30, true);
@@ -644,7 +630,7 @@
             flag.pos.copy(flag.homePos);
             flag.group.position.copy(flag.homePos);
             flag.group.visible = true;
-            game.addFeedItem(`🚩 ${teamKey} FLAG auto-returned to base!`, 'warn');
+            game.addFeedItem(`[CTF] ${teamKey} FLAG auto-returned to base`, 'warn');
           }
         }
 
@@ -663,14 +649,14 @@
               flag.lastDropper = null;
               ac.carryingFlag = flag;
               ac.boostEnergy = CONFIG.BOOST.maxEnergy;
-              ac.addComboAction(CONFIG.CTF.stealPoints, 45, game, `🚩 ENEMY FLAG STOLEN! +${CONFIG.CTF.stealPoints}`);
+              ac.addComboAction(CONFIG.CTF.stealPoints, 45, game, `ENEMY FLAG STOLEN +${CONFIG.CTF.stealPoints}`);
               if (ac.isPlayer) {
                 flag.group.visible = false;
                 audio.playFlagFanfare(true);
               } else if (game.player && game.player.team === flag.team) {
                 audio.playFlagFanfare(false);
               }
-              game.addFeedItem(`🚩 ${ac.callsign} STOLE the ${flag.team} FLAG!`, ac.team === 'BLUE' ? 'kill-blue' : 'kill-red');
+              game.addFeedItem(`[FLAG] ${ac.callsign} STOLE ${flag.team} FLAG`, ac.team === 'BLUE' ? 'kill-blue' : 'kill-red');
               break;
             } else if (ac.team === flag.team && flag.state === 'DROPPED' && dSq <= returnSq) {
               flag.state = 'AT_BASE';
@@ -680,11 +666,11 @@
               flag.group.position.copy(flag.homePos);
               flag.group.visible = true;
               ac.flagReturns++;
-              ac.addComboAction(CONFIG.CTF.returnPoints, 40, game, `🛡️ FLAG RETURNED! +${CONFIG.CTF.returnPoints}`);
+              ac.addComboAction(CONFIG.CTF.returnPoints, 40, game, `FLAG RETURNED +${CONFIG.CTF.returnPoints}`);
               if (ac.isPlayer) {
                 audio.playFlagFanfare(true);
               }
-              game.addFeedItem(`🛡️ ${ac.callsign} returned the ${flag.team} FLAG!`, ac.team === 'BLUE' ? 'kill-blue' : 'kill-red');
+              game.addFeedItem(`[DEFEND] ${ac.callsign} returned ${flag.team} FLAG`, ac.team === 'BLUE' ? 'kill-blue' : 'kill-red');
               break;
             }
           }
@@ -710,13 +696,13 @@
             capturedFlag.group.visible = true;
 
             ac.flagCaptures++;
-            ac.addComboAction(CONFIG.CTF.capturePoints, 100, game, `🏆 FLAG CAPTURED! +${CONFIG.CTF.capturePoints}`);
+            ac.addComboAction(CONFIG.CTF.capturePoints, 100, game, `FLAG CAPTURED +${CONFIG.CTF.capturePoints}`);
             game.onFlagCaptured(ac, capturedFlag.team);
           } else if (ac.isPlayer) {
             const now = Date.now();
             if (!ac.lastMissingFlagAlert || now - ac.lastMissingFlagAlert > 2800) {
               ac.lastMissingFlagAlert = now;
-              game.addFloatingPopup('⚠️ CANNOT CAPTURE: YOUR TEAM FLAG IS NOT AT BASE! RECOVER IT FIRST!', '#ff3b47');
+              game.addFloatingPopup('CANNOT CAPTURE: TEAM FLAG NOT AT BASE — RECOVER FIRST', '#c9443e');
               if (game.audio) game.audio.playTone(220, 0.22, 'sawtooth', 0.28);
             }
           }
@@ -743,14 +729,22 @@
       flag.dropTimer = CONFIG.CTF.autoReturnTime;
       if (game) {
         if (isManualDrop && dropper) {
-          game.addFeedItem(`🏳️ ${dropper.callsign} dropped the ${flag.team} FLAG!`, 'warn');
+          game.addFeedItem(`[FLAG] ${dropper.callsign} dropped ${flag.team} FLAG`, 'warn');
           if (dropper.isPlayer) {
-            game.addFloatingPopup('🏳️ FLAG DROPPED! (3.5s PICKUP COOLDOWN)', '#fbbf24');
+            game.addFloatingPopup('FLAG DROPPED // 3.5s COOLDOWN', '#d9822b');
             if (game.audio) game.audio.playTone(392.0, 0.14, 'triangle', 0.20);
           }
         } else {
-          game.addFeedItem(`🚩 ${flag.team} FLAG was dropped!`, 'warn');
+          game.addFeedItem(`[FLAG] ${flag.team} FLAG dropped`, 'warn');
         }
+      }
+    }
+
+    setHangarLightingMode(inHangar) {
+      if (this.hemiLight) this.hemiLight.intensity = inHangar ? 0.28 : 0.96;
+      if (this.sunLight) this.sunLight.intensity = inHangar ? 0.12 : 1.38;
+      if (this.scene && this.scene.fog) {
+        this.scene.fog.density = inHangar ? 0.00018 : 0.000024;
       }
     }
 

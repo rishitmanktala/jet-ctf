@@ -41,7 +41,9 @@
           invertY: false,
           musicVol: 0.85,
           sfxVol: 0.85,
-          graphics: 'HIGH'
+          graphics: 'HIGH',
+          hudColor: 'GREEN',
+          showFps: false
         },
         tutorialDone: false
       };
@@ -129,6 +131,21 @@
         s.invertY = Boolean(profile.settings.invertY);
       }
       return s;
+    }
+
+    static getUpgradePreviewStats(typeId, category, profile) {
+      if (!profile || !profile.upgrades || !profile.upgrades[typeId]) {
+        return this.getEffectiveAircraftStats(typeId, profile);
+      }
+      const curUp = profile.upgrades[typeId];
+      const curLvl = curUp[category] || 1;
+      if (curLvl >= 5) return this.getEffectiveAircraftStats(typeId, profile);
+      const nextProfile = Object.assign({}, profile, {
+        upgrades: Object.assign({}, profile.upgrades, {
+          [typeId]: Object.assign({}, curUp, { [category]: curLvl + 1 })
+        })
+      });
+      return this.getEffectiveAircraftStats(typeId, nextProfile);
     }
   }
 

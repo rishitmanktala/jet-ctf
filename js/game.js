@@ -15,6 +15,9 @@
     }
 
     constructor() {
+      if (window.__isPhoneDevice) {
+        return;
+      }
       this.canvas = document.getElementById('webgl-canvas');
       this.renderer = new THREE.WebGLRenderer({
         canvas: this.canvas,
@@ -25,7 +28,7 @@
       this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 
       this.scene = new THREE.Scene();
-      this.camera = new THREE.PerspectiveCamera(62, window.innerWidth / window.innerHeight, 1.5, 48000);
+      this.camera = new THREE.PerspectiveCamera(62, window.innerWidth / window.innerHeight, 1.5, 65000);
 
       this.cg = new CrazyGamesBridge();
       this.audio = new AudioEngine();
@@ -52,9 +55,19 @@
         this.weapons.setPlayerTracerColor(CONFIG.TRACERS[this.selectedTracer].hex);
       }
 
-      // Apply audio volumes from career settings
+      // Apply audio volumes & HUD preferences from career settings
       this.audio.setMusicVolume(this.career.settings.musicVol);
       this.audio.setSfxVolume(this.career.settings.sfxVol);
+      this.hud.hudColorTheme = this.career.settings.hudColor || 'GREEN';
+      this.hud.showFps = Boolean(this.career.settings.showFps);
+
+      // Hangar Bay Viewport & Systems Dry-Test State
+      this.hangarTestAB = false;
+      this.hangarTracerBullets = [];
+      this.hangarTracerGeo = new THREE.BoxGeometry(0.16, 0.16, 2.8);
+      this.hangarTracerCount = 0;
+      this.hangarActivePreset = '3/4';
+      this._resetArmedTimer = null;
 
       this.namePoolIndex = 0;
       this.highScore = this.career.stats.bestScore || 0;
@@ -88,21 +101,30 @@
       this.respawnAwaitingDeploy = false;
       this.respawnPreviewJet = this.selectedAircraft || 'FALCON';
 
-      // Setup 3D Showroom Mouse Drag Orbit
+      // Setup 3D Showroom Mouse Drag Orbit & Tab Camera Choreography
+      this.hangarTab = 'fighter';
+      this.respawnTab = 'fighter';
       this.showroomOrbit = {
         isDragging: false,
         prevX: 0,
         prevY: 0,
-        azimuth: 0.45,
-        elevation: 0.16,
-        dist: 17.5,
-        autoSpinSpeed: 0.18
+        azimuth: -0.34,
+        elevation: 0.14,
+        dist: 15.8,
+        targetAzimuth: -0.34,
+        targetElevation: 0.14,
+        targetDist: 15.8,
+        lookBiasX: -2.4,
+        targetLookBiasX: -2.4,
+        autoSpinSpeed: 0.08,
+        userInteracted: false
       };
 
       const cvs = this.canvas;
       cvs.addEventListener('pointerdown', (e) => {
         if (this.state !== 'MENU' && !this.inRespawnWorkshop) return;
         this.showroomOrbit.isDragging = true;
+        this.showroomOrbit.userInteracted = true;
         this.showroomOrbit.prevX = e.clientX;
         this.showroomOrbit.prevY = e.clientY;
         try { cvs.setPointerCapture(e.pointerId); } catch (_) {}
@@ -115,8 +137,19 @@
         this.showroomOrbit.prevY = e.clientY;
 
         this.showroomOrbit.azimuth -= dx * 0.0065;
-        this.showroomOrbit.elevation = Math.max(-0.06, Math.min(0.55, this.showroomOrbit.elevation + dy * 0.0055));
+        this.showroomOrbit.elevation = Math.max(-0.02, Math.min(0.95, this.showroomOrbit.elevation + dy * 0.0055));
+        this.showroomOrbit.targetAzimuth = this.showroomOrbit.azimuth;
+        this.showroomOrbit.targetElevation = this.showroomOrbit.elevation;
       });
+      cvs.addEventListener('wheel', (e) => {
+        if (this.state !== 'MENU' && !this.inRespawnWorkshop) return;
+        e.preventDefault();
+        this.showroomOrbit.targetDist = THREE.MathUtils.clamp(
+          this.showroomOrbit.targetDist + e.deltaY * 0.012,
+          9.5,
+          28.0
+        );
+      }, { passive: false });
       const stopOrbitDrag = (e) => {
         if (this.showroomOrbit.isDragging) {
           this.showroomOrbit.isDragging = false;
@@ -126,11 +159,11 @@
       window.addEventListener('pointerup', stopOrbitDrag);
       window.addEventListener('pointercancel', stopOrbitDrag);
 
-      // Setup 3D Tactical Military Bunker Hangar
+      // Setup 3D Airbase Maintenance Bay
       this.setupHangarBay();
 
       this.menuFighter = AircraftModelFactory.createAircraftMesh(this.selectedAircraft, this.selectedLivery, this.selectedTeam);
-      this.menuFighter.position.set(0, 750, 0);
+      this.menuFighter.position.set(0, 748.0, 0);
       this.scene.add(this.menuFighter);
 
       this.initHangarUI();
@@ -147,26 +180,15 @@
       this.cg.init(this);
       this.lastTime = performance.now();
 
-      if (!this.career.tutorialDone) {
-        // Auto-Launch Maiden Flight Sortie for brand new pilots
-        this.startMatch(true);
-      } else {
-        // Returning pilot: boot cleanly into 3D Hangar showroom
-        this.state = 'MENU';
-        const startScreen = document.getElementById('start-screen');
-        if (startScreen) {
-          startScreen.classList.remove('hidden', 'tab-upgrades-active', 'tab-paint-active', 'tab-pilot-active');
-          startScreen.classList.add('tab-fighter-active');
-        }
-        document.querySelectorAll('.hangar-tab-btn').forEach(b => {
-          b.classList.toggle('active', b.dataset.tab === 'fighter');
-        });
-        document.getElementById('top-controls').classList.add('hidden');
-        document.getElementById('touch-controls').classList.add('hidden');
-        const vjoyInit = document.getElementById('virtual-joystick-container');
-        if (vjoyInit) vjoyInit.classList.add('hidden');
-        this.updateMenuPreviewMesh();
-      }
+      // Always enter the Airbase Hangar Bay first (new pilots trigger Tutorial on first Deploy)
+      this.state = 'MENU';
+      this.world.setHangarLightingMode(true);
+      this.switchHangarTab('fighter', false);
+      const startScreen = document.getElementById('start-screen');
+      if (startScreen) startScreen.classList.remove('hidden');
+      const topControls = document.getElementById('top-controls');
+      if (topControls) topControls.classList.add('hidden');
+      this.updateMenuPreviewMesh();
 
       this.animate();
     }
@@ -176,20 +198,36 @@
       this.hangarBay = new THREE.Group();
       this.hangarBay.position.set(0, 746, 0);
       this.hangarBayMeshes = [];
+      this.hangarStandMeshes = [];
 
-      // 1. Concrete Tarmac Floor with High-Res Procedural Canvas Texture
+      const addBayMesh = (m, isStandPart = false) => {
+        this.hangarBay.add(m);
+        this.hangarBayMeshes.push(m);
+        if (isStandPart) this.hangarStandMeshes.push(m);
+        return m;
+      };
+
+      // 1. Matte Concrete Hangar Apron Texture (Clean seams, subtle wear, understated bay stencil)
       const canvas = document.createElement('canvas');
       canvas.width = 1024;
       canvas.height = 1024;
       const ctx = canvas.getContext('2d');
 
-      // Industrial concrete base
-      ctx.fillStyle = '#0f1422';
+      ctx.fillStyle = '#1d1f22';
       ctx.fillRect(0, 0, 1024, 1024);
 
-      // Concrete tile expansion seams
-      ctx.strokeStyle = '#070b14';
-      ctx.lineWidth = 6;
+      // Subtle concrete patina blocks
+      for (let gx = 0; gx < 1024; gx += 128) {
+        for (let gy = 0; gy < 1024; gy += 128) {
+          const shade = 27 + (((gx * 7 + gy * 13) % 5) - 2);
+          ctx.fillStyle = `rgb(${shade}, ${shade + 2}, ${shade + 5})`;
+          ctx.fillRect(gx + 2, gy + 2, 124, 124);
+        }
+      }
+
+      // Expansion joints
+      ctx.strokeStyle = '#111316';
+      ctx.lineWidth = 4;
       for (let x = 0; x <= 1024; x += 256) {
         ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, 1024); ctx.stroke();
       }
@@ -197,169 +235,256 @@
         ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(1024, y); ctx.stroke();
       }
 
-      // Tactical yellow taxi hazard stripes (45-degree caution lines along bottom border)
-      ctx.save();
-      ctx.fillStyle = '#eab308';
-      for (let i = -1024; i < 2048; i += 72) {
-        ctx.beginPath();
-        ctx.moveTo(i, 870);
-        ctx.lineTo(i + 34, 870);
-        ctx.lineTo(i + 134, 1024);
-        ctx.lineTo(i + 100, 1024);
-        ctx.closePath();
-        ctx.fill();
-      }
-      ctx.restore();
+      // Thin perimeter service line & corner bay index
+      ctx.strokeStyle = 'rgba(184, 132, 40, 0.72)';
+      ctx.lineWidth = 5;
+      ctx.strokeRect(140, 140, 744, 744);
 
-      // Aircraft Staging Parking Box
-      ctx.strokeStyle = '#38bdf8';
-      ctx.lineWidth = 8;
-      ctx.setLineDash([24, 16]);
-      ctx.strokeRect(180, 180, 664, 664);
+      ctx.strokeStyle = 'rgba(234, 231, 223, 0.20)';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([18, 14]);
+      ctx.strokeRect(160, 160, 704, 704);
       ctx.setLineDash([]);
 
-      // Corner Chevron Brackets
-      ctx.strokeStyle = '#00ff9d';
-      ctx.lineWidth = 10;
-      const bLen = 80;
-      ctx.beginPath(); ctx.moveTo(180, 180 + bLen); ctx.lineTo(180, 180); ctx.lineTo(180 + bLen, 180); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(844 - bLen, 180); ctx.lineTo(844, 180); ctx.lineTo(844, 180 + bLen); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(180, 844 - bLen); ctx.lineTo(180, 844); ctx.lineTo(180 + bLen, 844); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(844 - bLen, 844); ctx.lineTo(844, 844); ctx.lineTo(844, 844 - bLen); ctx.stroke();
-
-      // Stenciled Military Markings
-      ctx.fillStyle = 'rgba(56, 189, 248, 0.45)';
-      ctx.font = 'bold 34px "Orbitron", monospace';
-      ctx.textAlign = 'center';
-      ctx.fillText('TACTICAL CTF AIRBASE // STAGING BAY 01', 512, 260);
-
-      ctx.font = 'bold 22px monospace';
-      ctx.fillStyle = 'rgba(251, 191, 36, 0.6)';
-      ctx.fillText('CAUTION: KEEP CLEAR OF JET BLAST & INTAKES', 512, 780);
+      ctx.fillStyle = 'rgba(234, 231, 223, 0.30)';
+      ctx.font = '700 24px "Share Tech Mono", monospace';
+      ctx.textAlign = 'left';
+      ctx.fillText('BAY 01', 164, 198);
 
       const floorTex = new THREE.CanvasTexture(canvas);
       const floorGeo = new THREE.PlaneGeometry(120, 120);
       floorGeo.rotateX(-Math.PI * 0.5);
-      const floorMat = new THREE.MeshStandardMaterial({
+      const floorMesh = new THREE.Mesh(floorGeo, new THREE.MeshStandardMaterial({
         map: floorTex,
-        roughness: 0.65,
-        metalness: 0.25
-      });
-      const floorMesh = new THREE.Mesh(floorGeo, floorMat);
-      floorMesh.position.set(0, 0, 0);
-      this.hangarBay.add(floorMesh);
-      this.hangarBayMeshes.push(floorMesh);
+        roughness: 0.84,
+        metalness: 0.14
+      }));
+      addBayMesh(floorMesh);
 
-      // 2. Bunker Blast Wall
-      const wallGeo = new THREE.BoxGeometry(120, 40, 2);
-      const wallMat = new THREE.MeshStandardMaterial({
-        color: 0x080d1a,
-        roughness: 0.8,
-        metalness: 0.3
-      });
-      const wallMesh = new THREE.Mesh(wallGeo, wallMat);
-      wallMesh.position.set(0, 20, -50);
-      this.hangarBay.add(wallMesh);
-      this.hangarBayMeshes.push(wallMesh);
+      // 2. Enclosed Side/Front Walls, Ceiling Trusses & Semi-Open North Blast Doors (-Z)
+      const wallMat = new THREE.MeshStandardMaterial({ color: 0x1e2126, roughness: 0.85, metalness: 0.24 });
+      const doorMat = new THREE.MeshStandardMaterial({ color: 0x2a2f36, roughness: 0.54, metalness: 0.58 });
+      const trussMat = new THREE.MeshStandardMaterial({ color: 0x353b43, metalness: 0.65, roughness: 0.40 });
+      const fixtureEmissiveMat = new THREE.MeshBasicMaterial({ color: 0xfff0d6 });
+      const amberStrobeMat = new THREE.MeshBasicMaterial({ color: 0xd9822b });
+      const redAccentMat = new THREE.MeshBasicMaterial({ color: 0xc9443e });
 
-      // Hangar Structural Steel Trusses
-      const trussGeo = new THREE.BoxGeometry(2, 40, 3);
-      const trussMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, metalness: 0.7, roughness: 0.3 });
-      for (const tx of [-40, -20, 0, 20, 40]) {
-        const tMesh = new THREE.Mesh(trussGeo, trussMat);
-        tMesh.position.set(tx, 20, -49);
-        this.hangarBay.add(tMesh);
-        this.hangarBayMeshes.push(tMesh);
+      const frontWall = new THREE.Mesh(new THREE.BoxGeometry(120, 42, 2), wallMat);
+      frontWall.position.set(0, 21, 52);
+      const leftWall = new THREE.Mesh(new THREE.BoxGeometry(2, 42, 108), wallMat);
+      leftWall.position.set(-56, 21, 0);
+      const rightWall = new THREE.Mesh(new THREE.BoxGeometry(2, 42, 108), wallMat);
+      rightWall.position.set(56, 21, 0);
+      const ceilingRoof = new THREE.Mesh(new THREE.BoxGeometry(120, 2, 108), wallMat);
+      ceilingRoof.position.set(0, 41, 0);
+      addBayMesh(frontWall);
+      addBayMesh(leftWall);
+      addBayMesh(rightWall);
+      addBayMesh(ceilingRoof);
+
+      // Semi-open North Blast Door Aperture (34m central daylight portal)
+      const northLeftWing = new THREE.Mesh(new THREE.BoxGeometry(42, 42, 2.5), wallMat);
+      northLeftWing.position.set(-39, 21, -52);
+      const northRightWing = new THREE.Mesh(new THREE.BoxGeometry(42, 42, 2.5), wallMat);
+      northRightWing.position.set(39, 21, -52);
+      const northHeader = new THREE.Mesh(new THREE.BoxGeometry(38, 14, 3), wallMat);
+      northHeader.position.set(0, 35, -52);
+      addBayMesh(northLeftWing);
+      addBayMesh(northRightWing);
+      addBayMesh(northHeader);
+
+      // Heavy sliding steel blast doors partly retracted to each side of the aperture
+      for (const sx of [-1, 1]) {
+        const doorLeaf = new THREE.Mesh(new THREE.BoxGeometry(16, 28, 1.4), doorMat);
+        doorLeaf.position.set(sx * 24, 14, -50.2);
+        addBayMesh(doorLeaf);
+
+        // Door hazard edge stripe & lintel beacon
+        const edgeWarn = new THREE.Mesh(new THREE.BoxGeometry(0.6, 27, 1.6), amberStrobeMat);
+        edgeWarn.position.set(sx * 16.2, 14, -50.2);
+        addBayMesh(edgeWarn);
+      }
+      for (const bx of [-16, 0, 16]) {
+        const lintelBeacon = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.5, 0.8), amberStrobeMat);
+        lintelBeacon.position.set(bx, 28.2, -50.4);
+        addBayMesh(lintelBeacon);
       }
 
-      // Overhead Ceiling Beam
-      const beamGeo = new THREE.BoxGeometry(120, 3, 3);
-      const beamMesh = new THREE.Mesh(beamGeo, trussMat);
-      beamMesh.position.set(0, 38, -49);
-      this.hangarBay.add(beamMesh);
-      this.hangarBayMeshes.push(beamMesh);
+      // Exterior runway apron visible through the semi-open blast doors
+      const extApron = new THREE.Mesh(
+        new THREE.PlaneGeometry(140, 260),
+        new THREE.MeshLambertMaterial({ color: 0x26292e })
+      );
+      extApron.rotation.x = -Math.PI * 0.5;
+      extApron.position.set(0, -0.05, -180);
+      addBayMesh(extApron);
 
-      // 3. Overhead Industrial Floodlights
-      const floodLight = new THREE.SpotLight(0xf1f5f9, 2.4, 90, Math.PI * 0.30, 0.6, 1.2);
-      floodLight.position.set(0, 34, 6);
-      floodLight.target.position.set(0, 4, 0);
-      this.hangarBay.add(floodLight);
-      this.hangarBay.add(floodLight.target);
+      for (let rz = -75; rz >= -250; rz -= 32) {
+        const dash = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.08, 14), fixtureEmissiveMat);
+        dash.position.set(0, 0.02, rz);
+        addBayMesh(dash);
+      }
 
-      const rimLight = new THREE.SpotLight(0x38bdf8, 1.8, 75, Math.PI * 0.35, 0.7, 1.2);
-      rimLight.position.set(-26, 16, -20);
-      rimLight.target.position.set(0, 4, 0);
-      this.hangarBay.add(rimLight);
-      this.hangarBay.add(rimLight.target);
+      // Structural Columns, Ceiling Roof Trusses & Recessed Overhead Light Banks
+      const colGeo = new THREE.BoxGeometry(2.2, 40, 2.8);
+      for (const tx of [-42, -21, 21, 42]) {
+        addBayMesh(new THREE.Mesh(colGeo, trussMat)).position.set(tx, 20, 50);
+      }
+      for (const bz of [-36, -12, 12, 36]) {
+        addBayMesh(new THREE.Mesh(colGeo, trussMat)).position.set(-54, 20, bz);
+        addBayMesh(new THREE.Mesh(colGeo, trussMat)).position.set(54, 20, bz);
+        const beam = new THREE.Mesh(new THREE.BoxGeometry(110, 2.2, 2.4), trussMat);
+        beam.position.set(0, 39, bz);
+        addBayMesh(beam);
 
-      const amberAccent = new THREE.PointLight(0xfbbf24, 1.2, 55);
-      amberAccent.position.set(22, 4, 15);
-      this.hangarBay.add(amberAccent);
+        const lightBar = new THREE.Mesh(new THREE.BoxGeometry(22, 0.35, 1.1), fixtureEmissiveMat);
+        lightBar.position.set(0, 37.8, bz);
+        addBayMesh(lightBar);
+      }
 
-      // 4. Staging Turntable Platform Disc with Glowing Rim
-      const turntableGeo = new THREE.CylinderGeometry(15, 15.6, 0.35, 48);
-      const turntableMat = new THREE.MeshStandardMaterial({
-        color: 0x080f1d,
-        roughness: 0.45,
-        metalness: 0.75
-      });
-      const turntableMesh = new THREE.Mesh(turntableGeo, turntableMat);
-      turntableMesh.position.set(0, 0.17, 0);
-      this.hangarBay.add(turntableMesh);
-      this.hangarBayMeshes.push(turntableMesh);
+      // 3. Matte Steel Turntable Deck & Baked Ground Contact Shadow
+      const turntableMesh = new THREE.Mesh(
+        new THREE.CylinderGeometry(13.5, 14.0, 0.32, 56),
+        new THREE.MeshStandardMaterial({ color: 0x15171a, roughness: 0.62, metalness: 0.58 })
+      );
+      turntableMesh.position.set(0, 0.16, 0);
+      addBayMesh(turntableMesh, true);
 
-      // Glowing Cyan Perimeter Ring
-      const ringGeo = new THREE.RingGeometry(14.8, 15.3, 64);
-      ringGeo.rotateX(-Math.PI * 0.5);
-      const ringMat = new THREE.MeshBasicMaterial({
-        color: 0x38bdf8,
+      const ringMesh = new THREE.Mesh(
+        new THREE.RingGeometry(13.35, 13.65, 64),
+        new THREE.MeshBasicMaterial({ color: 0x4f555e, side: THREE.DoubleSide })
+      );
+      ringMesh.rotation.x = -Math.PI * 0.5;
+      ringMesh.position.set(0, 0.33, 0);
+      addBayMesh(ringMesh, true);
+
+      // Soft baked ambient occlusion contact shadow directly under the jet
+      const shadowCanvas = document.createElement('canvas');
+      shadowCanvas.width = 256;
+      shadowCanvas.height = 256;
+      const sctx = shadowCanvas.getContext('2d');
+      const sgrad = sctx.createRadialGradient(128, 128, 18, 128, 128, 122);
+      sgrad.addColorStop(0.0, 'rgba(4, 5, 7, 0.88)');
+      sgrad.addColorStop(0.55, 'rgba(6, 7, 9, 0.52)');
+      sgrad.addColorStop(1.0, 'rgba(6, 7, 9, 0.0)');
+      sctx.fillStyle = sgrad;
+      sctx.fillRect(0, 0, 256, 256);
+
+      const contactShadow = new THREE.Mesh(
+        new THREE.PlaneGeometry(14.5, 16.5),
+        new THREE.MeshBasicMaterial({
+          map: new THREE.CanvasTexture(shadowCanvas),
+          transparent: true,
+          depthWrite: false
+        })
+      );
+      contactShadow.rotation.x = -Math.PI * 0.5;
+      contactShadow.position.set(0, 0.34, 0.4);
+      addBayMesh(contactShadow, true);
+
+      // 4. Low-Profile Maintenance Jacks & Side Service Gantry Cart
+      const jackCoords = [
+        [0, -4.4],
+        [-2.2, 2.2],
+        [2.2, 2.2]
+      ];
+      for (const [jx, jz] of jackCoords) {
+        const jackBase = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.58, 0.25, 8), trussMat);
+        jackBase.position.set(jx, 0.45, jz);
+        const jackStrut = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.16, 1.05, 8), doorMat);
+        jackStrut.position.set(jx, 1.02, jz);
+        const jackPad = new THREE.Mesh(new THREE.BoxGeometry(0.45, 0.12, 0.45), amberStrobeMat);
+        jackPad.position.set(jx, 1.50, jz);
+        addBayMesh(jackBase, true);
+        addBayMesh(jackStrut, true);
+        addBayMesh(jackPad, true);
+      }
+
+      // Service floodlight gantry & tool cart parked clear of orbital camera path
+      const gantry = new THREE.Group();
+      gantry.position.set(17.5, 0.32, -16.5);
+      gantry.rotation.y = -0.82;
+      const cartBody = new THREE.Mesh(new THREE.BoxGeometry(2.4, 1.2, 1.3), trussMat);
+      cartBody.position.y = 0.72;
+      const cartStripe = new THREE.Mesh(new THREE.BoxGeometry(2.44, 0.18, 1.34), amberStrobeMat);
+      cartStripe.position.y = 1.05;
+      const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.11, 4.4, 8), doorMat);
+      mast.position.set(-0.7, 2.5, 0);
+      const lampHousing = new THREE.Mesh(new THREE.BoxGeometry(1.1, 0.36, 0.45), wallMat);
+      lampHousing.position.set(-0.7, 4.7, 0);
+      lampHousing.rotation.x = 0.35;
+      const lampLens = new THREE.Mesh(new THREE.BoxGeometry(0.92, 0.22, 0.08), fixtureEmissiveMat);
+      lampLens.position.set(-0.7, 4.65, -0.22);
+      lampLens.rotation.x = 0.35;
+      const safetyCone = new THREE.Mesh(new THREE.ConeGeometry(0.24, 0.75, 8), redAccentMat);
+      safetyCone.position.set(1.8, 0.38, -0.5);
+      gantry.add(cartBody, cartStripe, mast, lampHousing, lampLens, safetyCone);
+      addBayMesh(gantry);
+
+      // 5. Three Soft Additive Overhead Volumetric Light Cones (Replaces square point sprites)
+      const coneCanvas = document.createElement('canvas');
+      coneCanvas.width = 64;
+      coneCanvas.height = 256;
+      const cctx = coneCanvas.getContext('2d');
+      const vGrad = cctx.createLinearGradient(0, 0, 0, 256);
+      vGrad.addColorStop(0.0, 'rgba(255, 240, 214, 0.0)');
+      vGrad.addColorStop(0.18, 'rgba(255, 240, 214, 0.28)');
+      vGrad.addColorStop(0.70, 'rgba(214, 224, 236, 0.08)');
+      vGrad.addColorStop(1.0, 'rgba(180, 198, 218, 0.0)');
+      cctx.fillStyle = vGrad;
+      cctx.fillRect(0, 0, 64, 256);
+
+      const lightShaftMat = new THREE.MeshBasicMaterial({
+        map: new THREE.CanvasTexture(coneCanvas),
+        transparent: true,
+        opacity: 0.14,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
         side: THREE.DoubleSide
       });
-      const ringMesh = new THREE.Mesh(ringGeo, ringMat);
-      ringMesh.position.set(0, 0.36, 0);
-      this.hangarBay.add(ringMesh);
-      this.hangarBayMeshes.push(ringMesh);
-
-      // Showroom Key / Fill Lights
-      const showroomFill = new THREE.DirectionalLight(0xe0f2fe, 1.3);
-      showroomFill.position.set(12, 16, 26);
-      this.hangarBay.add(showroomFill);
-
-      const showroomBacklight = new THREE.DirectionalLight(0x38bdf8, 0.9);
-      showroomBacklight.position.set(-12, 14, -24);
-      this.hangarBay.add(showroomBacklight);
-
-      // 5. Atmospheric Floating Dust Specks
-      const dustCount = 120;
-      const dustGeo = new THREE.BufferGeometry();
-      const dustPositions = new Float32Array(dustCount * 3);
-      for (let i = 0; i < dustCount; i++) {
-        dustPositions[i * 3 + 0] = (Math.random() - 0.5) * 36;
-        dustPositions[i * 3 + 1] = 1 + Math.random() * 22;
-        dustPositions[i * 3 + 2] = (Math.random() - 0.5) * 36;
+      for (const sx of [-18, 0, 18]) {
+        const cone = new THREE.Mesh(new THREE.ConeGeometry(7.2, 34, 24, 1, true), lightShaftMat);
+        cone.position.set(sx, 20.5, sx === 0 ? -4 : -14);
+        addBayMesh(cone);
       }
-      dustGeo.setAttribute('position', new THREE.BufferAttribute(dustPositions, 3));
-      const dustMat = new THREE.PointsMaterial({
-        color: 0xbae6fd,
-        size: 0.35,
-        transparent: true,
-        opacity: 0.65,
-        blending: THREE.AdditiveBlending
-      });
-      this.hangarDust = new THREE.Points(dustGeo, dustMat);
-      this.hangarBay.add(this.hangarDust);
-      this.hangarBayMeshes.push(this.hangarDust);
 
+      // 6. Calibrated 3-Point Bay Lighting (Matte RAM finish contrast without white clipping)
+      const bayHemiFill = new THREE.HemisphereLight(0x88a0b8, 0x16181c, 0.36);
+      this.hangarBay.add(bayHemiFill);
+
+      const overheadKey = new THREE.SpotLight(0xffe6c4, 0.90, 95, Math.PI * 0.34, 0.78, 1.1);
+      overheadKey.position.set(8, 34, 14);
+      overheadKey.target.position.set(0, 2.2, 0);
+      this.hangarBay.add(overheadKey);
+      this.hangarBay.add(overheadKey.target);
+
+      const doorCoolFill = new THREE.DirectionalLight(0xa4bed8, 0.48);
+      doorCoolFill.position.set(-10, 14, -46);
+      this.hangarBay.add(doorCoolFill);
+
+      const portalBounceLight = new THREE.PointLight(0x9fb8d4, 0.52, 72);
+      portalBounceLight.position.set(0, 18, -32);
+      this.hangarBay.add(portalBounceLight);
+
+      const frontRimFill = new THREE.DirectionalLight(0xffebd0, 0.28);
+      frontRimFill.position.set(14, 10, 28);
+      this.hangarBay.add(frontRimFill);
+
+      const bayAmberAccent = new THREE.PointLight(0xd9822b, 0.65, 42);
+      bayAmberAccent.position.set(14, 4.5, -10);
+      this.hangarBay.add(bayAmberAccent);
+
+      this.hangarDust = null;
       this.scene.add(this.hangarBay);
 
-      // Studio Dark Void Backdrop Sphere (isolates 3D aircraft so nothing else is visible mid-respawn)
+      // Studio Dark Backdrop Sphere (mid-match respawn workshop isolation)
       const studioVoidGeo = new THREE.SphereGeometry(65, 32, 24);
       const studioVoidMat = new THREE.MeshBasicMaterial({
-        color: 0x030712,
+        color: 0x0c0d0f,
         side: THREE.BackSide
       });
       this.studioVoid = new THREE.Mesh(studioVoidGeo, studioVoidMat);
-      this.studioVoid.position.set(0, 750, 0);
+      this.studioVoid.position.set(0, 748, 0);
       this.studioVoid.visible = false;
       this.scene.add(this.studioVoid);
     }
@@ -377,155 +502,412 @@
       this.syncSettingsUI();
     }
 
+    setOrbitPresetForTab(tab) {
+      if (!this.showroomOrbit) return;
+      const presets = {
+        fighter:  { az: -0.34, el: 0.14, dist: 15.8, biasX: -2.4, tag: '3/4' },
+        upgrades: { az: 2.38,  el: 0.19, dist: 15.2, biasX: -2.2, tag: 'NOSE' },
+        paint:    { az: -0.78, el: 0.34, dist: 15.8, biasX: -2.4, tag: '3/4' },
+        pilot:    { az: -0.18, el: 0.22, dist: 21.5, biasX: -1.8, tag: '3/4' }
+      };
+      const p = presets[tab] || presets.fighter;
+      this.showroomOrbit.targetAzimuth = p.az;
+      this.showroomOrbit.targetElevation = p.el;
+      this.showroomOrbit.targetDist = p.dist;
+      this.showroomOrbit.targetLookBiasX = p.biasX;
+      this.showroomOrbit.userInteracted = false;
+      this.hangarActivePreset = p.tag;
+      this.syncBayViewportButtons();
+    }
+
+    applyCameraPreset(preset) {
+      if (!this.showroomOrbit) return;
+      const map = {
+        '3/4':  { az: -0.34, el: 0.14, dist: 15.8, biasX: -2.4 },
+        'NOSE': { az: 2.38,  el: 0.19, dist: 15.2, biasX: -2.2 },
+        'TOP':  { az: 0.02,  el: 0.90, dist: 17.5, biasX: -2.1 },
+        'AFT':  { az: 0.34,  el: 0.12, dist: 14.8, biasX: -2.2 }
+      };
+      const p = map[preset] || map['3/4'];
+      this.showroomOrbit.targetAzimuth = p.az;
+      this.showroomOrbit.targetElevation = p.el;
+      this.showroomOrbit.targetDist = p.dist;
+      this.showroomOrbit.targetLookBiasX = p.biasX;
+      this.hangarActivePreset = preset;
+      this.syncBayViewportButtons();
+    }
+
+    syncBayViewportButtons() {
+      document.querySelectorAll('.bay-tool-btn[data-cam-preset]').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.camPreset === this.hangarActivePreset);
+      });
+      document.querySelectorAll('.bay-tool-btn[data-bay-test="ab"]').forEach(btn => {
+        btn.classList.toggle('active', Boolean(this.hangarTestAB));
+      });
+    }
+
+    toggleHangarAbTest() {
+      this.hangarTestAB = !this.hangarTestAB;
+      this.syncBayViewportButtons();
+      if (this.audio) this.audio.playUiTick(this.hangarTestAB ? 'afterburner' : 'click');
+    }
+
+    triggerHangarTracerBurst() {
+      if (!this.menuFighter) return;
+      if (this.audio) {
+        this.audio.init();
+        this.audio.playUiTick('dryfire');
+      }
+      const hex = (CONFIG.TRACERS && CONFIG.TRACERS[this.selectedTracer])
+        ? CONFIG.TRACERS[this.selectedTracer].hex
+        : 0xf0d284;
+      const mat = new THREE.MeshBasicMaterial({ color: hex });
+      const activeJet = this.inRespawnWorkshop ? (this.respawnPreviewJet || this.selectedAircraft) : (this.previewAircraft || this.selectedAircraft);
+      const isTitan = activeJet === 'TITAN';
+      this.hangarTracerCount = (this.hangarTracerCount || 0) + 1;
+
+      const xOffset = isTitan ? 0 : (this.hangarTracerCount % 2 === 0 ? 1.35 : -1.35);
+      const yOffset = isTitan ? 747.55 : 748.0;
+      const bolt = new THREE.Mesh(this.hangarTracerGeo, mat);
+      bolt.position.set(xOffset, yOffset, -6.2);
+      this.scene.add(bolt);
+      this.hangarTracerBullets.push({ mesh: bolt, mat, age: 0, maxLife: 0.72 });
+    }
+
+    clearHangarTestEffects(turnOffAb = true) {
+      if (this.hangarTracerBullets && this.hangarTracerBullets.length > 0) {
+        for (const b of this.hangarTracerBullets) {
+          this.scene.remove(b.mesh);
+          if (b.mat && b.mat.dispose) b.mat.dispose();
+        }
+        this.hangarTracerBullets = [];
+      }
+      if (turnOffAb) {
+        this.hangarTestAB = false;
+        this.syncBayViewportButtons();
+      }
+    }
+
+    switchHangarTab(tab, playTick = true) {
+      this.hangarTab = tab || 'fighter';
+      const views = ['fighter', 'upgrades', 'paint', 'pilot'];
+      views.forEach(v => {
+        const el = document.getElementById(`tab-view-${v}`);
+        if (el) el.classList.toggle('hidden', v !== this.hangarTab);
+      });
+      const jetHdr = document.getElementById('dock-jet-header');
+      if (jetHdr) jetHdr.classList.toggle('hidden', this.hangarTab === 'pilot');
+
+      document.querySelectorAll('.hangar-tab-btn').forEach(b => {
+        b.classList.toggle('active', b.dataset.tab === this.hangarTab);
+      });
+      const startScreen = document.getElementById('start-screen');
+      if (startScreen) {
+        startScreen.classList.remove('tab-fighter-active', 'tab-upgrades-active', 'tab-paint-active', 'tab-pilot-active');
+        startScreen.classList.add(`tab-${this.hangarTab}-active`);
+      }
+
+      if (this.hangarTab === 'pilot') {
+        this.renderPilotStats();
+      } else {
+        this.renderWorkshopUI();
+      }
+      this.setOrbitPresetForTab(this.hangarTab);
+      if (playTick && this.audio) this.audio.playUiTick('tab');
+    }
+
+    switchRespawnTab(tab, playTick = true) {
+      this.respawnTab = tab || 'fighter';
+      ['fighter', 'upgrades', 'paint'].forEach(v => {
+        const el = document.getElementById(`respawn-tab-${v}`);
+        if (el) el.classList.toggle('hidden', v !== this.respawnTab);
+      });
+      document.querySelectorAll('.respawn-tab-btn').forEach(b => {
+        b.classList.toggle('active', b.dataset.tab === this.respawnTab);
+      });
+      this.renderRespawnWorkshopUI();
+      this.setOrbitPresetForTab(this.respawnTab);
+      if (playTick && this.audio) this.audio.playUiTick('tab');
+    }
+
     renderHangarProfile() {
       const rankInfo = CareerManager.getRank(this.career.xp);
       const iconEl = document.getElementById('hangar-rank-icon');
       const nameEl = document.getElementById('hangar-rank-name');
       const xpFillEl = document.getElementById('hangar-xp-fill');
       const creditsEl = document.getElementById('hangar-credits-val');
+      const teamPill = document.getElementById('hangar-team-pill');
 
-      if (iconEl) iconEl.textContent = rankInfo.cur.badge;
+      if (iconEl) iconEl.textContent = rankInfo.cur.icon || rankInfo.cur.badge;
       if (nameEl) nameEl.textContent = rankInfo.cur.name;
       if (xpFillEl) xpFillEl.style.width = `${Math.round(rankInfo.progress * 100)}%`;
       if (creditsEl) creditsEl.textContent = this.career.credits.toLocaleString();
+      if (teamPill) {
+        const isBlue = this.selectedTeam !== 'RED';
+        teamPill.textContent = isBlue ? 'BLUE SQUADRON' : 'RED SQUADRON';
+        teamPill.classList.toggle('team-blue', isBlue);
+        teamPill.classList.toggle('team-red', !isBlue);
+      }
 
       const callsignInput = document.getElementById('input-callsign');
       if (callsignInput) callsignInput.value = this.career.callsign || 'NightHawk_IN';
+    }
+
+    renderActionSlot(slotId, targetJet, inRespawn) {
+      const actionSlot = document.getElementById(slotId);
+      if (!actionSlot) return;
+      const baseDef = CONFIG.AIRCRAFT[targetJet] || CONFIG.AIRCRAFT.FALCON;
+      const isUnlocked = this.career.unlockedAircraft.includes(targetJet);
+      const isEquipped = (this.selectedAircraft === targetJet);
+      const unlockCost = baseDef.unlockCost !== undefined ? baseDef.unlockCost : (baseDef.cost || 0);
+
+      actionSlot.innerHTML = '';
+      if (isEquipped) {
+        actionSlot.innerHTML = `<span class="jet-status-tag">${inRespawn ? 'EQUIPPED' : 'IN SERVICE'}</span>`;
+        return;
+      }
+
+      const btn = document.createElement('button');
+      if (isUnlocked) {
+        btn.className = 'action-inline-btn equip';
+        btn.textContent = inRespawn ? 'SELECT JET' : 'EQUIP';
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          this.equipAircraft(targetJet);
+          if (inRespawn) {
+            this.updateRespawnPreviewMesh();
+            this.renderRespawnWorkshopUI();
+          }
+        });
+      } else {
+        btn.className = 'action-inline-btn unlock';
+        btn.textContent = `UNLOCK ${unlockCost.toLocaleString()} PTS`;
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          this.unlockAircraft(targetJet, inRespawn);
+        });
+      }
+      actionSlot.appendChild(btn);
+    }
+
+    renderTelemetryBars(containerId, specGridId, jetKey, eff, compareEff = null) {
+      const container = document.getElementById(containerId);
+      if (!container) return;
+      const base = CONFIG.AIRCRAFT[jetKey] || CONFIG.AIRCRAFT.FALCON;
+      const metrics = [
+        { label: 'Top Speed',   base: base.maxSpeed,     cur: eff.maxSpeed,     cmp: compareEff ? compareEff.maxSpeed : null,     max: 560, unit: ' km/h', dec: 0 },
+        { label: 'Turn Rate',   base: base.pitchRate,    cur: eff.pitchRate,    cmp: compareEff ? compareEff.pitchRate : null,    max: 4.4, unit: ' rad/s', dec: 1 },
+        { label: 'Armament',    base: base.cannonDamage * base.cannonFireRate, cur: eff.cannonDamage * eff.cannonFireRate, cmp: compareEff ? (compareEff.cannonDamage * compareEff.cannonFireRate) : null, max: 230, unit: ' dps', dec: 0 },
+        { label: 'Hull Armor',  base: base.maxHp,        cur: eff.maxHp,        cmp: compareEff ? compareEff.maxHp : null,        max: 200, unit: ' HP', dec: 0 },
+        { label: 'Afterburner', base: 100,               cur: eff.boostMaxEnergy || 100, cmp: compareEff ? (compareEff.boostMaxEnergy || 100) : null, max: 165, unit: ' cap', dec: 0 }
+      ];
+
+      container.innerHTML = '';
+      metrics.forEach(m => {
+        const basePct = Math.min(100, Math.round((m.base / m.max) * 100));
+        const curPct = Math.min(100, Math.round((m.cur / m.max) * 100));
+        const deltaPct = Math.max(0, curPct - basePct);
+        const valStr = m.dec === 0 ? `${Math.round(m.cur)}${m.unit}` : `${m.cur.toFixed(m.dec)}${m.unit}`;
+
+        let cmpBadgeHtml = '';
+        let cmpPosBar = '';
+        let cmpNegBar = '';
+        if (m.cmp !== null && Math.abs(m.cur - m.cmp) >= (m.dec === 0 ? 1 : 0.05)) {
+          const diff = m.cur - m.cmp;
+          const sign = diff > 0 ? '+' : '';
+          const diffFmt = m.dec === 0 ? Math.round(diff) : diff.toFixed(m.dec);
+          const cls = diff > 0 ? 'pos' : 'neg';
+          cmpBadgeHtml = `<span class="telemetry-delta ${cls}">${sign}${diffFmt}</span>`;
+
+          const cmpPct = Math.min(100, Math.round((m.cmp / m.max) * 100));
+          if (curPct > cmpPct) {
+            cmpPosBar = `<div class="telemetry-fill-cmp-pos" style="left:${cmpPct}%;width:${curPct - cmpPct}%;"></div>`;
+          } else if (curPct < cmpPct) {
+            cmpNegBar = `<div class="telemetry-fill-cmp-neg" style="left:${curPct}%;width:${cmpPct - curPct}%;"></div>`;
+          }
+        }
+
+        const row = document.createElement('div');
+        row.className = 'telemetry-row';
+        row.innerHTML = `
+          <div class="telemetry-top">
+            <span class="telemetry-name">${m.label}</span>
+            <div class="telemetry-val-group">
+              ${cmpBadgeHtml}
+              <span class="telemetry-val">${valStr}</span>
+            </div>
+          </div>
+          <div class="telemetry-track">
+            <div class="telemetry-fill-base" style="width:${Math.min(basePct, curPct)}%;"></div>
+            <div class="telemetry-fill-bonus" style="left:${basePct}%;width:${deltaPct}%;"></div>
+            ${cmpPosBar}${cmpNegBar}
+          </div>
+        `;
+        container.appendChild(row);
+      });
+
+      const specGrid = specGridId ? document.getElementById(specGridId) : null;
+      if (specGrid) {
+        specGrid.innerHTML = `
+          <div class="spec-cell"><div class="k">AFTERBURNER MAX</div><div class="v">${eff.boostMaxSpeed} KM/H</div></div>
+          <div class="spec-cell"><div class="k">FIRE RATE</div><div class="v">${eff.cannonFireRate} RDS/S</div></div>
+          <div class="spec-cell"><div class="k">MUZZLE VELOCITY</div><div class="v">${eff.cannonMuzzleSpeed} M/S</div></div>
+          <div class="spec-cell"><div class="k">ROLL AUTHORITY</div><div class="v">${eff.rollRate.toFixed(1)} RAD/S</div></div>
+        `;
+      }
+    }
+
+    renderFleetStrip(containerId, targetJet, onSelect) {
+      const strip = document.getElementById(containerId);
+      if (!strip) return;
+      strip.innerHTML = '';
+
+      CONFIG.AIRCRAFT_KEYS.forEach((key, i) => {
+        const def = CONFIG.AIRCRAFT[key];
+        const unl = this.career.unlockedAircraft.includes(key);
+        const eqp = (this.selectedAircraft === key);
+        const act = (targetJet === key);
+        const cost = def.unlockCost !== undefined ? def.unlockCost : (def.cost || 0);
+
+        const stateLbl = eqp ? 'ACTIVE' : (unl ? 'READY' : `${cost.toLocaleString()}`);
+        const stateCls = eqp ? 'in-service' : (unl ? 'owned' : 'locked');
+
+        const card = document.createElement('button');
+        card.type = 'button';
+        card.className = `fleet-card ${act ? 'active' : ''} ${eqp ? 'equipped-card' : ''}`;
+        card.innerHTML = `
+          <div class="fleet-card-top">
+            <span class="fleet-card-idx">0${i + 1}</span>
+            <span class="fleet-card-state ${stateCls}">${stateLbl}</span>
+          </div>
+          <div class="fleet-card-name">${def.shortName || def.name}</div>
+        `;
+        card.addEventListener('click', () => {
+          if (this.audio) this.audio.playUiTick('click');
+          onSelect(key);
+        });
+        strip.appendChild(card);
+      });
+    }
+
+    renderUpgradesTrack(containerId, targetJet, onAfterUpgrade, previewBannerId = null) {
+      const container = document.getElementById(containerId);
+      if (!container) return;
+      container.innerHTML = '';
+
+      const eff = CareerManager.getEffectiveAircraftStats(targetJet, this.career);
+      const cats = ['speed', 'agility', 'firepower', 'armor', 'boost'];
+      const catNames = {
+        speed: `Engine Thrust (${eff.maxSpeed} km/h)`,
+        agility: `Flight Surfaces (${eff.pitchRate} rad/s)`,
+        firepower: `20mm Rotary (${eff.cannonDamage} dmg)`,
+        armor: `Airframe Hull (${eff.maxHp} HP)`,
+        boost: `Afterburner Tank (${eff.boostMaxEnergy} cap)`
+      };
+
+      if (!this.career.upgrades[targetJet]) {
+        this.career.upgrades[targetJet] = { speed: 1, agility: 1, firepower: 1, armor: 1, boost: 1 };
+      }
+      const curUps = this.career.upgrades[targetJet];
+      const allMaxed = cats.every(c => (curUps[c] || 1) >= 5);
+      const previewEl = previewBannerId ? document.getElementById(previewBannerId) : null;
+      const resetPreview = () => {
+        if (!previewEl) return;
+        previewEl.classList.remove('active');
+        previewEl.innerHTML = allMaxed
+          ? '<span>ALL AIRFRAME SYSTEMS MAXED</span><span class="sage-text">TIER 5/5</span>'
+          : '<span>HOVER SYSTEM TO PREVIEW NEXT TIER</span>';
+      };
+      resetPreview();
+
+      cats.forEach(cat => {
+        const curLvl = curUps[cat] || 1;
+        const nextCost = (curLvl < 5) ? CONFIG.UPGRADE_COSTS[curLvl] : 0;
+
+        let pipsHtml = '';
+        for (let i = 1; i <= 5; i++) {
+          pipsHtml += `<span class="upgrade-pip ${i <= curLvl ? 'filled' : ''}"></span>`;
+        }
+
+        const actionHtml = (curLvl < 5)
+          ? `<button type="button" class="upgrade-step-btn" data-cat="${cat}" ${this.career.credits < nextCost ? 'disabled' : ''}>+ UPGRADE (${nextCost})</button>`
+          : `<span class="upgrade-max-tag">MAXED</span>`;
+
+        const row = document.createElement('div');
+        row.className = 'upgrade-slim-row';
+        row.innerHTML = `
+          <div class="upgrade-slim-head">
+            <span class="upgrade-slim-title">${catNames[cat]}</span>
+            <span class="upgrade-slim-meta">LVL ${curLvl}/5</span>
+          </div>
+          <div class="upgrade-slim-foot">
+            <div class="upgrade-pips">${pipsHtml}</div>
+            ${actionHtml}
+          </div>
+        `;
+
+        row.addEventListener('mouseenter', () => {
+          row.classList.add('is-previewed');
+          if (!previewEl) return;
+          if (curLvl >= 5) {
+            previewEl.classList.add('active');
+            previewEl.innerHTML = `<span>${cat.toUpperCase()}</span><span class="sage-text">MAX TIER REACHED</span>`;
+            return;
+          }
+          const nextStats = CareerManager.getUpgradePreviewStats(targetJet, cat, this.career);
+          const labels = {
+            speed:     `TOP SPEED: ${eff.maxSpeed} -> ${nextStats.maxSpeed} KM/H`,
+            agility:   `TURN RATE: ${eff.pitchRate.toFixed(2)} -> ${nextStats.pitchRate.toFixed(2)} RAD/S`,
+            firepower: `CANNON: ${eff.cannonDamage * eff.cannonFireRate} -> ${nextStats.cannonDamage * nextStats.cannonFireRate} DPS`,
+            armor:     `HULL ARMOR: ${eff.maxHp} -> ${nextStats.maxHp} HP`,
+            boost:     `AFTERBURNER: ${eff.boostMaxEnergy} -> ${nextStats.boostMaxEnergy} CAP`
+          };
+          previewEl.classList.add('active');
+          previewEl.innerHTML = `<span>NEXT TIER</span><span class="amber-text">${labels[cat]}</span>`;
+        });
+        row.addEventListener('mouseleave', () => {
+          row.classList.remove('is-previewed');
+          resetPreview();
+        });
+
+        const btn = row.querySelector('.upgrade-step-btn');
+        if (btn) {
+          btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.purchaseUpgrade(cat, targetJet, onAfterUpgrade);
+          });
+        }
+        container.appendChild(row);
+      });
     }
 
     renderWorkshopUI() {
       const targetJet = this.previewAircraft || this.selectedAircraft || 'FALCON';
       const baseDef = CONFIG.AIRCRAFT[targetJet] || CONFIG.AIRCRAFT.FALCON;
       const eff = CareerManager.getEffectiveAircraftStats(targetJet, this.career);
-      const isUnlocked = this.career.unlockedAircraft.includes(targetJet);
-      const isEquipped = (this.selectedAircraft === targetJet);
-      const unlockCost = baseDef.unlockCost !== undefined ? baseDef.unlockCost : (baseDef.cost || 0);
+      const compareEff = (targetJet !== this.selectedAircraft)
+        ? CareerManager.getEffectiveAircraftStats(this.selectedAircraft, this.career)
+        : null;
       const idx = CONFIG.AIRCRAFT_KEYS.indexOf(targetJet);
 
-      // 1. Carousel Header Info
       const counterEl = document.getElementById('carousel-jet-counter');
       const nameEl = document.getElementById('carousel-jet-name');
       const roleEl = document.getElementById('carousel-jet-role');
-      const actionSlot = document.getElementById('carousel-jet-action-slot');
       const upJetName = document.getElementById('upgrade-jet-name');
 
-      if (counterEl) counterEl.textContent = `AIRCRAFT ${idx + 1} OF ${CONFIG.AIRCRAFT_KEYS.length}`;
+      if (counterEl) counterEl.textContent = `0${idx + 1} / 0${CONFIG.AIRCRAFT_KEYS.length}`;
       if (nameEl) nameEl.textContent = baseDef.name;
       if (roleEl) roleEl.textContent = (baseDef.tagline || baseDef.tag || 'MULTI-ROLE COMBAT FIGHTER').toUpperCase();
       if (upJetName) upJetName.textContent = (baseDef.shortName || baseDef.name).toUpperCase();
 
-      if (actionSlot) {
-        actionSlot.innerHTML = '';
-        if (isEquipped) {
-          actionSlot.innerHTML = `<span class="jet-status-badge equipped">✓ EQUIPPED IN SERVICE</span>`;
-        } else if (isUnlocked) {
-          const btn = document.createElement('button');
-          btn.className = 'primary-btn btn-equip-action';
-          btn.style.cssText = 'font-size:12px;padding:7px 24px;background:#00ff9d;color:#040914;font-weight:800;border:none;border-radius:4px;cursor:pointer;';
-          btn.textContent = '✈ EQUIP FIGHTER';
-          btn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            this.equipAircraft(targetJet);
-          });
-          actionSlot.appendChild(btn);
-        } else {
-          const btn = document.createElement('button');
-          btn.className = 'primary-btn btn-unlock-action';
-          btn.style.cssText = 'font-size:12px;padding:7px 24px;background:#fbbf24;color:#0f172a;font-weight:800;border:none;border-radius:4px;cursor:pointer;';
-          btn.textContent = `🔓 UNLOCK AIRFRAME (₵${unlockCost.toLocaleString()})`;
-          btn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            this.unlockAircraft(targetJet);
-          });
-          actionSlot.appendChild(btn);
-        }
-      }
-
-      // 2. Quick Jet Picker Pills
-      const pillRow = document.getElementById('jet-pill-row');
-      if (pillRow) {
-        pillRow.innerHTML = '';
-        CONFIG.AIRCRAFT_KEYS.forEach(key => {
-          const def = CONFIG.AIRCRAFT[key];
-          const unl = this.career.unlockedAircraft.includes(key);
-          const eqp = (this.selectedAircraft === key);
-          const act = (targetJet === key);
-          const pill = document.createElement('div');
-          pill.className = `jet-pill ${act ? 'active' : ''} ${eqp ? 'equipped-pill' : ''}`;
-          const icon = eqp ? '✓ ' : (!unl ? '🔒 ' : '');
-          pill.textContent = `${icon}${def.shortName || def.name}`;
-          pill.addEventListener('click', () => {
-            this.selectAirframe(key);
-          });
-          pillRow.appendChild(pill);
-        });
-      }
-
-      // 3. Upgrades Compact List
-      const upContainer = document.getElementById('upgrades-grid-container');
-      if (upContainer) {
-        upContainer.innerHTML = '';
-        const cats = ['speed', 'agility', 'firepower', 'armor', 'boost'];
-        const catLabels = {
-          speed: `Top Speed (${eff.maxSpeed} km/h)`,
-          agility: `Agility & High-G Turn Authority`,
-          firepower: `20mm Cannon Damage (${eff.cannonDamage} dmg)`,
-          armor: `Hull Armor (${eff.maxHp} HP)`,
-          boost: `Afterburner Fuel (${eff.boostMaxEnergy} fuel)`
-        };
-
-        const curUps = (this.career.upgrades && this.career.upgrades[targetJet])
-          ? this.career.upgrades[targetJet]
-          : { speed: 1, agility: 1, firepower: 1, armor: 1, boost: 1 };
-
-        cats.forEach(cat => {
-          const curLvl = curUps[cat] || 1;
-          const nextCost = (curLvl < 5) ? CONFIG.UPGRADE_COSTS[curLvl] : 0;
-          const upDescObj = CONFIG.UPGRADE_DESCS[cat];
-          const desc = upDescObj ? `${upDescObj.name} • ${upDescObj.perk}` : '';
-
-          let dotsHtml = '';
-          for (let i = 1; i <= 5; i++) {
-            dotsHtml += `<span class="lvl-dot ${i <= curLvl ? 'filled' : ''}"></span>`;
-          }
-
-          let btnHtml = '';
-          if (curLvl < 5) {
-            const canAfford = this.career.credits >= nextCost;
-            btnHtml = `<button class="primary-btn btn-buy-upgrade" data-cat="${cat}" style="font-size:10px;padding:4px 10px;${canAfford ? 'background:#00ff9d;color:#040914;' : 'opacity:0.6;background:#64748b;color:#f8fafc;'}">UPGRADE (₵${nextCost})</button>`;
-          } else {
-            btnHtml = `<span style="font-size:10px;color:#00ff9d;font-weight:800;font-family:monospace;">MAX LEVEL</span>`;
-          }
-
-          const item = document.createElement('div');
-          item.className = 'upgrade-row-item';
-          item.innerHTML = `
-            <div class="upgrade-row-header">
-              <span class="upgrade-cat-name">${catLabels[cat]}</span>
-              <span style="font-size:10px;color:#38bdf8;font-family:monospace;">Lvl ${curLvl} / 5</span>
-            </div>
-            <div class="upgrade-cat-perk">${desc}</div>
-            <div class="upgrade-row-bottom">
-              <div class="upgrade-level-dots" style="flex:1;max-width:140px;">${dotsHtml}</div>
-              ${btnHtml}
-            </div>
-          `;
-
-          const buyBtn = item.querySelector('.btn-buy-upgrade');
-          if (buyBtn) {
-            buyBtn.addEventListener('click', (e) => {
-              e.stopPropagation();
-              this.purchaseUpgrade(cat);
-            });
-          }
-
-          upContainer.appendChild(item);
-        });
-      }
+      this.renderActionSlot('carousel-jet-action-slot', targetJet, false);
+      this.renderTelemetryBars('fighter-telemetry-bars', 'fighter-spec-grid', targetJet, eff, compareEff);
+      this.renderFleetStrip('jet-pill-row', targetJet, (key) => this.selectAirframe(key));
+      this.renderUpgradesTrack('upgrades-grid-container', targetJet, null, 'upgrade-hover-preview');
     }
 
     renderPilotStats() {
-      const s = this.career.stats;
+      const s = this.career.stats || {};
       const setText = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
       setText('stat-sorties', s.sorties || 0);
       setText('stat-wins', s.wins || 0);
@@ -536,6 +918,24 @@
       const kd = (s.deaths || 0) > 0 ? ((s.kills || 0) / s.deaths).toFixed(2) : (s.kills || 0).toFixed(1);
       setText('stat-kd', kd);
       setText('stat-caps', s.captures || 0);
+      setText('stat-best', (s.bestScore || this.highScore || 0).toLocaleString());
+      const accPct = (s.shotsFired || 0) > 0 ? Math.round(((s.hits || 0) / s.shotsFired) * 100) : 0;
+      setText('stat-acc', `${accPct}%`);
+
+      const rInfo = CareerManager.getRank(this.career.xp || 0);
+      setText('dossier-rank-badge', rInfo.cur.icon || rInfo.cur.badge);
+      setText('dossier-rank-name', (rInfo.cur.name || 'CADET I').toUpperCase());
+      setText('dossier-xp-cur', `${(this.career.xp || 0).toLocaleString()} XP TOTAL`);
+      if (rInfo.next) {
+        const rem = Math.max(0, rInfo.next.minXp - (this.career.xp || 0));
+        setText('dossier-xp-next', `+${rem.toLocaleString()} XP TO NEXT`);
+        setText('dossier-next-rank-name', (rInfo.next.name || '').toUpperCase());
+      } else {
+        setText('dossier-xp-next', 'MAX RANK ACHIEVED');
+        setText('dossier-next-rank-name', 'TOP TIER');
+      }
+      const dFill = document.getElementById('dossier-xp-fill');
+      if (dFill) dFill.style.width = `${Math.round(rInfo.progress * 100)}%`;
     }
 
     syncCustomizationUI() {
@@ -547,12 +947,30 @@
         const idx = parseInt(sw.dataset.tracer, 10) || 0;
         sw.classList.toggle('active', idx === this.selectedTracer);
       });
+      const livNameEl = document.getElementById('livery-active-name');
+      if (livNameEl && CONFIG.LIVERIES && CONFIG.LIVERIES[this.selectedLivery]) {
+        livNameEl.textContent = CONFIG.LIVERIES[this.selectedLivery].name.toUpperCase();
+      }
+      const trNameEl = document.getElementById('tracer-active-name');
+      if (trNameEl && CONFIG.TRACERS && CONFIG.TRACERS[this.selectedTracer]) {
+        trNameEl.textContent = CONFIG.TRACERS[this.selectedTracer].name.toUpperCase();
+      }
       const btnBlue = document.getElementById('opt-team-blue');
       const btnRed = document.getElementById('opt-team-red');
       if (btnBlue && btnRed) {
         btnBlue.classList.toggle('active-blue', this.selectedTeam === 'BLUE');
         btnRed.classList.toggle('active-red', this.selectedTeam === 'RED');
       }
+      this.renderHangarProfile();
+    }
+
+    _updateSliderVisual(slider) {
+      if (!slider) return;
+      const min = parseFloat(slider.min || 0);
+      const max = parseFloat(slider.max || 1);
+      const val = parseFloat(slider.value || min);
+      const pct = max > min ? ((val - min) / (max - min)) * 100 : 0;
+      slider.style.setProperty('--pct', `${pct.toFixed(1)}%`);
     }
 
     syncSettingsUI() {
@@ -562,15 +980,22 @@
       if (sensSlider && sensLbl) {
         sensSlider.value = cfg.mouseSens || 1.0;
         sensLbl.textContent = `${Number(cfg.mouseSens).toFixed(1)}x`;
+        this._updateSliderVisual(sensSlider);
       }
-      const invertCheck = document.getElementById('set-invert-y');
-      if (invertCheck) invertCheck.checked = Boolean(cfg.invertY);
+      const invertBtn = document.getElementById('set-invert-y');
+      if (invertBtn) {
+        const inv = Boolean(cfg.invertY);
+        invertBtn.classList.toggle('active', inv);
+        invertBtn.setAttribute('aria-pressed', inv ? 'true' : 'false');
+        invertBtn.textContent = inv ? 'INVERTED' : 'OFF';
+      }
 
       const musicSlider = document.getElementById('set-music-vol');
       const musicLbl = document.getElementById('lbl-music-vol');
       if (musicSlider && musicLbl) {
-        musicSlider.value = cfg.musicVol !== undefined ? cfg.musicVol : 0.65;
+        musicSlider.value = cfg.musicVol !== undefined ? cfg.musicVol : 0.85;
         musicLbl.textContent = `${Math.round(musicSlider.value * 100)}%`;
+        this._updateSliderVisual(musicSlider);
       }
 
       const sfxSlider = document.getElementById('set-sfx-vol');
@@ -578,19 +1003,39 @@
       if (sfxSlider && sfxLbl) {
         sfxSlider.value = cfg.sfxVol !== undefined ? cfg.sfxVol : 0.85;
         sfxLbl.textContent = `${Math.round(sfxSlider.value * 100)}%`;
+        this._updateSliderVisual(sfxSlider);
       }
 
-      const gfxSelect = document.getElementById('set-graphics');
-      if (gfxSelect) gfxSelect.value = cfg.graphics || 'HIGH';
+      const curQ = cfg.graphics || 'HIGH';
+      document.querySelectorAll('#set-graphics-group .seg-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.quality === curQ);
+      });
+
+      const hudTheme = cfg.hudColor || 'GREEN';
+      document.querySelectorAll('#set-hud-color-group .seg-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.hudColor === hudTheme);
+      });
+      if (this.hud) {
+        this.hud.hudColorTheme = hudTheme;
+        this.hud.showFps = Boolean(cfg.showFps);
+      }
+
+      const fpsBtn = document.getElementById('set-show-fps');
+      if (fpsBtn) {
+        const showFps = Boolean(cfg.showFps);
+        fpsBtn.classList.toggle('active', showFps);
+        fpsBtn.setAttribute('aria-pressed', showFps ? 'true' : 'false');
+        fpsBtn.textContent = showFps ? 'ON' : 'OFF';
+      }
     }
 
-    unlockAircraft(key) {
+    unlockAircraft(key, inRespawn = false) {
       const baseDef = CONFIG.AIRCRAFT[key];
       if (!baseDef) return;
       const cost = baseDef.unlockCost !== undefined ? baseDef.unlockCost : (baseDef.cost || 0);
       if (this.career.credits < cost) {
-        this.addFloatingPopup(`NEED ₵${(cost - this.career.credits).toLocaleString()} MORE CREDITS!`, '#ff3b47');
-        this.audio.playTone(220, 0.15, 'sawtooth', 0.2);
+        this.addFloatingPopup(`NEED ${(cost - this.career.credits).toLocaleString()} MORE PTS`, '#c9443e');
+        this.audio.playUiTick('error');
         return;
       }
       this.career.credits -= cost;
@@ -599,21 +1044,28 @@
       }
       this.selectedAircraft = key;
       this.previewAircraft = key;
+      this.respawnPreviewJet = key;
       this.career.selectedAircraft = key;
       CareerManager.save(this.career);
+      if (this.cg) this.cg.setData('fighterjets3d_aircraft', this.selectedAircraft);
 
       this.audio.playTone(523.25, 0.1, 'triangle', 0.2);
       setTimeout(() => this.audio.playTone(659.25, 0.12, 'triangle', 0.22), 80);
       setTimeout(() => this.audio.playTone(783.99, 0.18, 'triangle', 0.25), 160);
-      this.addFloatingPopup(`✈ ${baseDef.name} UNLOCKED & EQUIPPED!`, '#00ff9d');
+      this.addFloatingPopup(`${baseDef.name} UNLOCKED`, '#52c468');
 
       this.renderHangarProfile();
-      this.renderWorkshopUI();
-      this.updateMenuPreviewMesh();
+      if (inRespawn) {
+        this.updateRespawnPreviewMesh();
+        this.renderRespawnWorkshopUI();
+      } else {
+        this.renderWorkshopUI();
+        this.updateMenuPreviewMesh();
+      }
     }
 
-    purchaseUpgrade(category) {
-      const jet = this.previewAircraft || this.selectedAircraft;
+    purchaseUpgrade(category, explicitJet = null, onComplete = null) {
+      const jet = explicitJet || this.previewAircraft || this.selectedAircraft;
       if (!this.career.upgrades[jet]) {
         this.career.upgrades[jet] = { speed: 1, agility: 1, firepower: 1, armor: 1, boost: 1 };
       }
@@ -621,8 +1073,8 @@
       if (curLvl >= 5) return;
       const cost = CONFIG.UPGRADE_COSTS[curLvl];
       if (this.career.credits < cost) {
-        this.addFloatingPopup(`NEED ₵${cost - this.career.credits} MORE CREDITS!`, '#ff3b47');
-        this.audio.playTone(220, 0.15, 'sawtooth', 0.2);
+        this.addFloatingPopup(`NEED ${cost - this.career.credits} MORE PTS`, '#c9443e');
+        this.audio.playUiTick('error');
         return;
       }
       this.career.credits -= cost;
@@ -631,10 +1083,14 @@
 
       this.audio.playTone(440, 0.08, 'triangle', 0.18);
       setTimeout(() => this.audio.playTone(880, 0.15, 'triangle', 0.22), 70);
-      this.addFloatingPopup(`UPGRADE APPLIED: LEVEL ${curLvl + 1}!`, '#00ff9d');
+      this.addFloatingPopup(`UPGRADE APPLIED — LVL ${curLvl + 1}`, '#52c468');
 
       this.renderHangarProfile();
-      this.renderWorkshopUI();
+      if (onComplete) {
+        onComplete();
+      } else {
+        this.renderWorkshopUI();
+      }
     }
 
     selectAirframe(acId) {
@@ -653,7 +1109,7 @@
       CareerManager.save(this.career);
       if (this.cg) this.cg.setData('fighterjets3d_aircraft', this.selectedAircraft);
       this.audio.playTone(587.33, 0.1, 'triangle', 0.22);
-      this.addFloatingPopup(`✈ ${CONFIG.AIRCRAFT[acId].name} READY FOR COMBAT!`, '#00ff9d');
+      this.addFloatingPopup(`${CONFIG.AIRCRAFT[acId].name} ACTIVE`, '#52c468');
       this.renderWorkshopUI();
       this.updateMenuPreviewMesh();
     }
@@ -686,60 +1142,87 @@
     }
 
     bindUIEvents() {
-      // Main Hangar Tab Switching (Fighter / Upgrades / Paint / Pilot)
-      const startScreen = document.getElementById('start-screen');
+      // Hardware micro-click & subtle hover feedback across UI interactive elements
+      const rootEl = document.getElementById('game-container');
+      if (rootEl) {
+        rootEl.addEventListener('pointerenter', (e) => {
+          const btn = e.target && e.target.closest ? e.target.closest('button, .fleet-card, .livery-swatch') : null;
+          if (btn && !btn.disabled && this.audio) this.audio.playUiTick('hover');
+        }, true);
+        rootEl.addEventListener('click', (e) => {
+          const b = e.target && e.target.closest ? e.target.closest('button') : null;
+          if (b && e.detail > 0) b.blur();
+        });
+      }
+
+      // Main Hangar Tab Switching
       document.querySelectorAll('.hangar-tab-btn').forEach(btn => {
         btn.addEventListener('click', () => {
-          document.querySelectorAll('.hangar-tab-btn').forEach(b => b.classList.remove('active'));
-          btn.classList.add('active');
-          const target = btn.dataset.tab;
-
-          const wingLeftWorkshop = document.getElementById('wing-left-workshop');
-          const wingLeftPilot = document.getElementById('wing-left-pilot');
-          const wingRightWorkshop = document.getElementById('wing-right-workshop');
-          const wingRightPilot = document.getElementById('wing-right-pilot');
-
-          if (startScreen) {
-            startScreen.classList.remove('tab-fighter-active', 'tab-upgrades-active', 'tab-paint-active', 'tab-pilot-active');
-            startScreen.classList.add(`tab-${target}-active`);
-          }
-
-          if (target === 'pilot') {
-            if (wingLeftWorkshop) wingLeftWorkshop.classList.add('hidden');
-            if (wingLeftPilot) wingLeftPilot.classList.remove('hidden');
-            if (wingRightWorkshop) wingRightWorkshop.classList.add('hidden');
-            if (wingRightPilot) wingRightPilot.classList.remove('hidden');
-            this.renderPilotStats();
-          } else {
-            if (wingLeftPilot) wingLeftPilot.classList.add('hidden');
-            if (wingRightPilot) wingRightPilot.classList.add('hidden');
-            if (wingLeftWorkshop) wingLeftWorkshop.classList.remove('hidden');
-            if (wingRightWorkshop) wingRightWorkshop.classList.remove('hidden');
-            this.renderWorkshopUI();
-          }
+          this.switchHangarTab(btn.dataset.tab);
         });
       });
 
-      // Mid-Match Respawn Workshop Tab Switching (Fighter / Upgrades / Paint)
-      const respawnScreen = document.getElementById('respawn-hangar-screen');
+      // Mid-Match Respawn Workshop Tab Switching
       document.querySelectorAll('.respawn-tab-btn').forEach(btn => {
         btn.addEventListener('click', () => {
-          document.querySelectorAll('.respawn-tab-btn').forEach(b => b.classList.remove('active'));
-          btn.classList.add('active');
-          const target = btn.dataset.tab;
-
-          if (respawnScreen) {
-            respawnScreen.classList.remove('tab-fighter-active', 'tab-upgrades-active', 'tab-paint-active');
-            respawnScreen.classList.add(`tab-${target}-active`);
-          }
-          this.renderRespawnWorkshopUI();
+          this.switchRespawnTab(btn.dataset.tab);
         });
       });
 
-      // Carousel Navigation Buttons
+      // Top Header Quick Squadron Switcher
+      const teamPill = document.getElementById('hangar-team-pill');
+      if (teamPill) {
+        teamPill.addEventListener('click', () => {
+          if (this.audio) this.audio.playUiTick('click');
+          this.selectTeam(this.selectedTeam === 'BLUE' ? 'RED' : 'BLUE');
+        });
+      }
+
+      // Expandable [?] Briefing Drawer
+      const briefingDrawer = document.getElementById('hangar-briefing-drawer');
+      const toggleBriefing = document.getElementById('btn-toggle-briefing');
+      const closeBriefing = document.getElementById('btn-close-briefing');
+      if (toggleBriefing && briefingDrawer) {
+        toggleBriefing.addEventListener('click', () => {
+          if (this.audio) this.audio.playUiTick('click');
+          const open = briefingDrawer.classList.toggle('hidden');
+          toggleBriefing.classList.toggle('active', !open);
+        });
+      }
+      if (closeBriefing && briefingDrawer) {
+        closeBriefing.addEventListener('click', () => {
+          if (this.audio) this.audio.playUiTick('click');
+          briefingDrawer.classList.add('hidden');
+          if (toggleBriefing) toggleBriefing.classList.remove('active');
+        });
+      }
+
+      // Shared Bay Camera Presets & Systems Dry-Test Buttons (Main Hangar + Respawn Workshop)
+      document.querySelectorAll('.bay-tool-btn[data-cam-preset]').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          if (this.audio) this.audio.playUiTick('tab');
+          this.applyCameraPreset(btn.dataset.camPreset);
+        });
+      });
+      document.querySelectorAll('.bay-tool-btn[data-bay-test="ab"]').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          this.toggleHangarAbTest();
+        });
+      });
+      document.querySelectorAll('.bay-tool-btn[data-bay-test="tracer"]').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          this.triggerHangarTracerBurst();
+        });
+      });
+
+      // Fleet Step Navigation Buttons
       const btnPrev = document.getElementById('btn-prev-jet');
       if (btnPrev) {
         btnPrev.addEventListener('click', () => {
+          if (this.audio) this.audio.playUiTick('click');
           const curIdx = CONFIG.AIRCRAFT_KEYS.indexOf(this.previewAircraft || this.selectedAircraft);
           const newIdx = (curIdx - 1 + CONFIG.AIRCRAFT_KEYS.length) % CONFIG.AIRCRAFT_KEYS.length;
           this.selectAirframe(CONFIG.AIRCRAFT_KEYS[newIdx]);
@@ -748,6 +1231,7 @@
       const btnNext = document.getElementById('btn-next-jet');
       if (btnNext) {
         btnNext.addEventListener('click', () => {
+          if (this.audio) this.audio.playUiTick('click');
           const curIdx = CONFIG.AIRCRAFT_KEYS.indexOf(this.previewAircraft || this.selectedAircraft);
           const newIdx = (curIdx + 1) % CONFIG.AIRCRAFT_KEYS.length;
           this.selectAirframe(CONFIG.AIRCRAFT_KEYS[newIdx]);
@@ -757,6 +1241,7 @@
       // Livery Swatches
       document.querySelectorAll('#livery-group .livery-swatch').forEach(sw => {
         sw.addEventListener('click', () => {
+          if (this.audio) this.audio.playUiTick('click');
           this.selectLivery(parseInt(sw.dataset.livery, 10) || 0);
         });
       });
@@ -764,15 +1249,16 @@
       // Tracer Swatches
       document.querySelectorAll('#tracer-group .livery-swatch').forEach(sw => {
         sw.addEventListener('click', () => {
+          if (this.audio) this.audio.playUiTick('click');
           this.selectTracer(parseInt(sw.dataset.tracer, 10) || 0);
         });
       });
 
       // Squadron selection
       const btnBlue = document.getElementById('opt-team-blue');
-      if (btnBlue) btnBlue.addEventListener('click', () => this.selectTeam('BLUE'));
+      if (btnBlue) btnBlue.addEventListener('click', () => { if (this.audio) this.audio.playUiTick('click'); this.selectTeam('BLUE'); });
       const btnRed = document.getElementById('opt-team-red');
-      if (btnRed) btnRed.addEventListener('click', () => this.selectTeam('RED'));
+      if (btnRed) btnRed.addEventListener('click', () => { if (this.audio) this.audio.playUiTick('click'); this.selectTeam('RED'); });
 
       // Callsign Input
       const callsignInput = document.getElementById('input-callsign');
@@ -785,10 +1271,21 @@
 
       // Settings Modal
       const openSettings = () => {
+        if (this.audio) this.audio.playUiTick('click');
         this.syncSettingsUI();
         document.getElementById('settings-modal').classList.remove('hidden');
       };
       const closeSettings = () => {
+        if (this.audio) this.audio.playUiTick('click');
+        const resetBtn = document.getElementById('btn-reset-career');
+        if (resetBtn) {
+          resetBtn.classList.remove('confirm-armed');
+          resetBtn.textContent = 'RESET CAREER';
+        }
+        if (this._resetArmedTimer) {
+          clearTimeout(this._resetArmedTimer);
+          this._resetArmedTimer = null;
+        }
         document.getElementById('settings-modal').classList.add('hidden');
       };
       const btnOpenHangarSettings = document.getElementById('btn-open-settings');
@@ -798,7 +1295,6 @@
       const btnCloseSettings = document.getElementById('btn-close-settings');
       if (btnCloseSettings) btnCloseSettings.addEventListener('click', closeSettings);
 
-      // Settings Sliders & Inputs
       const sensSlider = document.getElementById('set-mouse-sens');
       if (sensSlider) {
         sensSlider.addEventListener('input', () => {
@@ -806,16 +1302,20 @@
           this.career.settings.mouseSens = v;
           const lbl = document.getElementById('lbl-mouse-sens');
           if (lbl) lbl.textContent = `${v.toFixed(1)}x`;
+          this._updateSliderVisual(sensSlider);
           CareerManager.save(this.career);
           if (this.player && this.player.stats) this.player.stats.mouseSens = v;
         });
       }
-      const invertCheck = document.getElementById('set-invert-y');
-      if (invertCheck) {
-        invertCheck.addEventListener('change', () => {
-          this.career.settings.invertY = invertCheck.checked;
+      const invertBtn = document.getElementById('set-invert-y');
+      if (invertBtn) {
+        invertBtn.addEventListener('click', () => {
+          const next = !this.career.settings.invertY;
+          this.career.settings.invertY = next;
           CareerManager.save(this.career);
-          if (this.player && this.player.stats) this.player.stats.invertY = invertCheck.checked;
+          if (this.player && this.player.stats) this.player.stats.invertY = next;
+          this.syncSettingsUI();
+          if (this.audio) this.audio.playUiTick('click');
         });
       }
       const musicSlider = document.getElementById('set-music-vol');
@@ -825,6 +1325,7 @@
           this.career.settings.musicVol = v;
           const lbl = document.getElementById('lbl-music-vol');
           if (lbl) lbl.textContent = `${Math.round(v * 100)}%`;
+          this._updateSliderVisual(musicSlider);
           this.audio.setMusicVolume(v);
           CareerManager.save(this.career);
         });
@@ -836,17 +1337,38 @@
           this.career.settings.sfxVol = v;
           const lbl = document.getElementById('lbl-sfx-vol');
           if (lbl) lbl.textContent = `${Math.round(v * 100)}%`;
+          this._updateSliderVisual(sfxSlider);
           this.audio.setSfxVolume(v);
           CareerManager.save(this.career);
         });
       }
-      const gfxSelect = document.getElementById('set-graphics');
-      if (gfxSelect) {
-        gfxSelect.addEventListener('change', () => {
-          this.career.settings.graphics = gfxSelect.value;
+      document.querySelectorAll('#set-graphics-group .seg-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const q = btn.dataset.quality || 'HIGH';
+          this.career.settings.graphics = q;
           CareerManager.save(this.career);
-          const dpr = gfxSelect.value === 'LOW' ? 1.0 : (gfxSelect.value === 'MEDIUM' ? Math.min(window.devicePixelRatio, 1.5) : Math.min(window.devicePixelRatio, 2));
+          const dpr = q === 'LOW' ? 1.0 : (q === 'MEDIUM' ? Math.min(window.devicePixelRatio, 1.5) : Math.min(window.devicePixelRatio, 2));
           this.renderer.setPixelRatio(dpr);
+          this.syncSettingsUI();
+          if (this.audio) this.audio.playUiTick('click');
+        });
+      });
+      document.querySelectorAll('#set-hud-color-group .seg-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const c = btn.dataset.hudColor || 'GREEN';
+          this.career.settings.hudColor = c;
+          CareerManager.save(this.career);
+          this.syncSettingsUI();
+          if (this.audio) this.audio.playUiTick('click');
+        });
+      });
+      const fpsBtn = document.getElementById('set-show-fps');
+      if (fpsBtn) {
+        fpsBtn.addEventListener('click', () => {
+          this.career.settings.showFps = !this.career.settings.showFps;
+          CareerManager.save(this.career);
+          this.syncSettingsUI();
+          if (this.audio) this.audio.playUiTick('click');
         });
       }
       const btnReplayTutorial = document.getElementById('btn-replay-tutorial');
@@ -865,37 +1387,42 @@
       }
       const btnResetCareer = document.getElementById('btn-reset-career');
       if (btnResetCareer) {
-        btnResetCareer.addEventListener('click', () => {
-          if (window.confirm('Reset all pilot career progress, unlocks, upgrades, and stats?')) {
-            localStorage.removeItem(CareerManager.STORAGE_KEY);
-            this.career = CareerManager.getDefaultProfile();
-            CareerManager.save(this.career);
-            this.selectedAircraft = 'FALCON';
-            this.selectedTeam = 'BLUE';
-            this.selectedLivery = 0;
-            this.selectedTracer = 0;
-            this.initHangarUI();
-            this.updateMenuPreviewMesh();
-            closeSettings();
-            this.addFloatingPopup('CAREER PROGRESS RESET', '#ff3b47');
+        const disarmReset = () => {
+          if (this._resetArmedTimer) {
+            clearTimeout(this._resetArmedTimer);
+            this._resetArmedTimer = null;
           }
+          btnResetCareer.classList.remove('confirm-armed');
+          btnResetCareer.textContent = 'RESET CAREER';
+        };
+        btnResetCareer.addEventListener('click', () => {
+          if (!btnResetCareer.classList.contains('confirm-armed')) {
+            btnResetCareer.classList.add('confirm-armed');
+            btnResetCareer.textContent = 'CONFIRM RESET?';
+            if (this.audio) this.audio.playUiTick('error');
+            this._resetArmedTimer = setTimeout(disarmReset, 4000);
+            return;
+          }
+          disarmReset();
+          localStorage.removeItem(CareerManager.STORAGE_KEY);
+          this.career = CareerManager.getDefaultProfile();
+          CareerManager.save(this.career);
+          this.selectedAircraft = 'FALCON';
+          this.previewAircraft = 'FALCON';
+          this.selectedTeam = 'BLUE';
+          this.selectedLivery = 0;
+          this.selectedTracer = 0;
+          this.highScore = 0;
+          this.initHangarUI();
+          this.updateMenuPreviewMesh();
+          closeSettings();
+          this.addFloatingPopup('CAREER PROGRESS RESET', '#c9443e');
         });
       }
 
       // HUD Mini-Buttons
       const btnCam = document.getElementById('btn-cam');
       if (btnCam) btnCam.addEventListener('click', () => this.toggleCamera());
-      const btnTouchUI = document.getElementById('btn-touch-ui');
-      if (btnTouchUI) {
-        const syncTouchUI = (show) => {
-          this.input.touchUIVisible = show;
-          btnTouchUI.classList.toggle('active', show);
-          const touchEl = document.getElementById('touch-controls');
-          if (touchEl) touchEl.classList.toggle('hidden', !show || this.state !== 'PLAYING');
-        };
-        btnTouchUI.addEventListener('click', () => syncTouchUI(!this.input.touchUIVisible));
-        btnTouchUI.classList.toggle('active', this.input.touchUIVisible);
-      }
 
       const helpBtn = document.getElementById('btn-help-hud');
       if (helpBtn) {
@@ -915,15 +1442,11 @@
       if (btnLaunch) {
         btnLaunch.addEventListener('click', () => {
           this.audio.init();
+          this.audio.playUiTick('deploy');
           this.startMatch();
           this.handleResize();
         });
       }
-
-      document.addEventListener('click', (e) => {
-        const b = e.target && e.target.closest ? e.target.closest('button') : null;
-        if (b && e.detail > 0) b.blur();
-      });
 
       window.addEventListener('fullscreenchange', () => this.handleResize());
       window.addEventListener('webkitfullscreenchange', () => this.handleResize());
@@ -997,15 +1520,24 @@
       });
     }
 
-    updateMenuPreviewMesh() {
+    _mountHangarAircraft(typeId, team) {
       if (this.menuFighter) {
         this.scene.remove(this.menuFighter);
         AircraftModelFactory.disposeObject3D(this.menuFighter);
       }
-      const previewJet = this.previewAircraft || this.selectedAircraft;
-      this.menuFighter = AircraftModelFactory.createAircraftMesh(previewJet, this.selectedLivery, this.selectedTeam);
-      this.menuFighter.position.set(0, 750, 0);
+      this.menuFighter = AircraftModelFactory.createAircraftMesh(typeId, this.selectedLivery, team);
+      this.menuFighter.position.set(0, 748.0, 0);
+      this.menuFighter.rotation.set(0, 0, 0);
+      if (this.menuFighter.userData && this.menuFighter.userData.abGroup) {
+        this.menuFighter.userData.abGroup.visible = Boolean(this.hangarTestAB);
+      }
+      this.menuFighter.visible = true;
       this.scene.add(this.menuFighter);
+    }
+
+    updateMenuPreviewMesh() {
+      const previewJet = this.previewAircraft || this.selectedAircraft;
+      this._mountHangarAircraft(previewJet, this.selectedTeam);
     }
 
     getNextUniquePilotName() {
@@ -1034,7 +1566,12 @@
         ? (basePos.z + 460 + slotDistBehind) // Facing North (-Z)
         : (basePos.z - 460 - slotDistBehind); // Facing South (+Z)
 
-      ac.spawnAt(x, y, z, runwayHeading, true);
+      if (ac.isPlayer && this.career && !this.career.tutorialDone) {
+        // Airborne spawn at safe altitude for tutorial so player is ready in mid-air
+        ac.spawnAt(basePos.x, 340, isBlue ? basePos.z - 200 : basePos.z + 200, runwayHeading, false);
+      } else {
+        ac.spawnAt(x, y, z, runwayHeading, true);
+      }
 
       if (ac.isPlayer) {
         this.input.resetPointerToCenter();
@@ -1042,11 +1579,18 @@
     }
 
     startMatch(isTutorial = false) {
+      this.clearHangarTestEffects(true);
       this.clearMatchEntities();
       this.world.resetFlags();
+      this.world.setHangarLightingMode(false);
       if (this.menuFighter) this.menuFighter.visible = false;
       if (this.hangarBay) this.hangarBay.visible = false;
       if (this.audio) this.audio.stopHangarAmbience();
+
+      const briefing = document.getElementById('hangar-briefing-drawer');
+      if (briefing) briefing.classList.add('hidden');
+      const briefingBtn = document.getElementById('btn-toggle-briefing');
+      if (briefingBtn) briefingBtn.classList.remove('active');
 
       document.getElementById('start-screen').classList.add('hidden');
       document.getElementById('pause-screen').classList.add('hidden');
@@ -1057,10 +1601,11 @@
       if (this.studioVoid) this.studioVoid.visible = false;
       document.getElementById('settings-modal').classList.add('hidden');
       document.getElementById('top-controls').classList.add('hidden');
-      document.getElementById('touch-controls').classList.toggle('hidden', !this.input.touchUIVisible);
-      const vjoy = document.getElementById('virtual-joystick-container');
-      if (vjoy) vjoy.classList.toggle('hidden', !this.input.touchUIVisible);
-      document.getElementById('feed-container').innerHTML = '';
+      const feedEl = document.getElementById('feed-container');
+      if (feedEl) {
+        feedEl.classList.remove('hidden');
+        feedEl.innerHTML = '';
+      }
 
       this.inRespawnWorkshop = false;
       this.respawnAwaitingDeploy = false;
@@ -1159,12 +1704,13 @@
       }
 
       this.updateCamera(1.0, this.player, true);
+      this.world.update(this.camera.position, 0);
       if (this.cg) this.cg.setGameplay(true);
 
       // Start Adrenaline Synthwave BGM
       this.audio.startMusic();
 
-      this.addFeedItem(`🚩 Capture The Flag Engaged! First to ${CONFIG.CTF.capturesToWin} Captures (10:00 Time Cap)!`, 'radio');
+      this.addFeedItem(`Sortie Engaged — First to ${CONFIG.CTF.capturesToWin} Captures`, 'radio');
 
       // Tutorial trigger
       if (isTutorial || !this.career.tutorialDone) {
@@ -1186,13 +1732,18 @@
       this.updateHighScore(true);
       this.clearMatchEntities();
       this.world.resetFlags();
+      this.world.setHangarLightingMode(true);
       this.state = 'MENU';
       this.isSuddenDeath = false;
       this.hud.clear();
       if (this.cg) this.cg.setGameplay(false);
       this.audio.updateEngine(0, 0, false, false);
       this.audio.startMusic();
-      if (this.tutorial) this.tutorial.stop();
+      if (this.tutorial) {
+        this.tutorial.active = false;
+        this.tutorial.isFrozen = false;
+        if (this.tutorial.cardEl) this.tutorial.cardEl.classList.add('hidden');
+      }
       if (this.menuFighter) this.menuFighter.visible = true;
       if (this.hangarBay) this.hangarBay.visible = true;
       if (this.hangarBayMeshes) this.hangarBayMeshes.forEach(m => m.visible = true);
@@ -1205,9 +1756,6 @@
       this.input.mouseButtons.right = false;
 
       document.getElementById('top-controls').classList.add('hidden');
-      document.getElementById('touch-controls').classList.add('hidden');
-      const vjoyMenu = document.getElementById('virtual-joystick-container');
-      if (vjoyMenu) vjoyMenu.classList.add('hidden');
       document.getElementById('pause-screen').classList.add('hidden');
       document.getElementById('results-screen').classList.add('hidden');
       document.getElementById('spectate-bar').classList.add('hidden');
@@ -1216,28 +1764,23 @@
       if (this.studioVoid) this.studioVoid.visible = false;
       document.getElementById('settings-modal').classList.add('hidden');
       const startScreen = document.getElementById('start-screen');
-      if (startScreen) {
-        startScreen.classList.remove('hidden', 'tab-upgrades-active', 'tab-paint-active', 'tab-pilot-active');
-        startScreen.classList.add('tab-fighter-active');
-      }
-      document.querySelectorAll('.hangar-tab-btn').forEach(b => {
-        b.classList.toggle('active', b.dataset.tab === 'fighter');
-      });
+      if (startScreen) startScreen.classList.remove('hidden');
 
+      this.clearHangarTestEffects(true);
       this.inRespawnWorkshop = false;
       this.respawnAwaitingDeploy = false;
 
+      this.switchHangarTab('fighter', false);
       this.initHangarUI();
       this.updateMenuPreviewMesh();
     }
 
     toggleCamera() {
       this.cameraMode = this.cameraMode === 'CHASE' ? 'COCKPIT' : 'CHASE';
+      if (this.audio) this.audio.playUiTick('tab');
       const btnCam = document.getElementById('btn-cam');
       if (btnCam) {
-        btnCam.textContent = this.input.isTouchDevice
-          ? `CAM: ${this.cameraMode === 'CHASE' ? '3RD' : '1ST'}`
-          : `CAM: ${this.cameraMode} [C]`;
+        btnCam.textContent = `CAM: ${this.cameraMode} [C]`;
       }
     }
 
@@ -1245,9 +1788,7 @@
       this.audio.setMuted(!this.audio.muted);
       const btn = document.getElementById('btn-mute');
       if (btn) {
-        btn.textContent = this.input.isTouchDevice
-          ? (this.audio.muted ? 'UNMUTE' : 'AUDIO')
-          : `AUDIO: ${this.audio.muted ? 'MUTED' : 'ON'} [M]`;
+        btn.textContent = `AUDIO: ${this.audio.muted ? 'MUTED' : 'ON'} [M]`;
         btn.classList.toggle('active', !this.audio.muted);
       }
     }
@@ -1260,7 +1801,7 @@
       if (pause) {
         this.updateHighScore(true);
         if (this.cg) this.cg.setGameplay(false);
-        this.populateScoreboard('scoreboard-body');
+        this.populateSplitScoreboard('scoreboard-blue-body', 'scoreboard-red-body', 'team-score-banner');
         pauseEl.classList.remove('hidden');
         this.audio.updateEngine(0, 0, false, false);
       } else {
@@ -1270,7 +1811,7 @@
       }
     }
 
-    cyclePlayerTarget() {
+    cyclePlayerTarget(manual = false) {
       if (!this.player) return;
       const enemies = this.aircraftList.filter(a => a.alive && a.team !== this.player.team);
       if (enemies.length === 0) {
@@ -1284,6 +1825,9 @@
       });
       const curIdx = enemies.indexOf(this.player.target);
       this.player.target = enemies[(curIdx + 1) % enemies.length];
+      if (manual && this.audio) {
+        this.audio.playUiTick('lock');
+      }
     }
 
     addFeedItem(text, cls = 'kill-blue') {
@@ -1302,7 +1846,7 @@
       }, isMob ? 2800 : 6500);
     }
 
-    addFloatingPopup(text, color = '#00ff9d') {
+    addFloatingPopup(text, color = '#52c468') {
       if (this.hud) this.hud.addPopup(text, color);
     }
 
@@ -1356,8 +1900,8 @@
         this.audio.playHitmarker(willKill, attacker.comboCount);
         this.hud.addDamageNumber(
           impactPos || victim.mesh.position,
-          willKill ? `💥 SPLASH! +${150 * attacker.comboCount}` : `-${finalDamage} HP`,
-          willKill ? '#00ff9d' : (attacker.overdriveTimer > 0 ? '#fbbf24' : '#ffdd44'),
+          willKill ? `SPLASH! +${150 * attacker.comboCount}` : `-${finalDamage} HP`,
+          willKill ? '#52c468' : (attacker.overdriveTimer > 0 ? '#d9822b' : '#eae7df'),
           willKill
         );
         this.updateHighScore(false);
@@ -1397,33 +1941,31 @@
         const specBar = document.getElementById('spectate-bar');
         if (specBar) specBar.classList.remove('hidden');
         const specLabel = document.getElementById('spectate-label');
-        const killerName = (this.killerAc && this.killerAc.callsign) ? this.killerAc.callsign : (causeLabel || 'OCEAN / TERRAIN IMPACT');
-        if (specLabel) specLabel.textContent = `🎯 ELIMINATED BY: ${killerName} // CHASE CAM`;
+        const killerName = (this.killerAc && this.killerAc.callsign) ? this.killerAc.callsign : (causeLabel || 'TERRAIN IMPACT');
+        if (specLabel) specLabel.textContent = `${killerName} — CHASE CAM`;
         const specBtn = document.getElementById('btn-spec-respawn');
         if (specBtn) {
           specBtn.disabled = true;
           specBtn.classList.remove('active');
           specBtn.style.opacity = '0.4';
           specBtn.style.cursor = 'not-allowed';
-          specBtn.textContent = 'SPAWN IN 4.0s';
+          specBtn.textContent = 'SPAWN 4.0s';
         }
 
         // Center Respawn Tip Overlay
         const centerOverlay = document.getElementById('respawn-center-overlay');
         if (centerOverlay) centerOverlay.classList.remove('hidden');
         const killerLine = document.getElementById('respawn-killer-line');
-        if (killerLine) killerLine.textContent = `ELIMINATED BY: ${killerName}`;
+        if (killerLine) killerLine.textContent = `ELIMINATED BY ${killerName}`;
         const centerTip = document.getElementById('respawn-center-tip-text');
         if (centerTip) centerTip.textContent = this.getRandomTacticalTip();
         const centerTimer = document.getElementById('respawn-center-timer');
-        if (centerTimer) centerTimer.textContent = 'RESPAWNING IN 4.0s';
+        if (centerTimer) centerTimer.textContent = '4.0s';
         const centerDeployBtn = document.getElementById('btn-center-deploy');
         if (centerDeployBtn) {
           centerDeployBtn.classList.add('hidden');
           centerDeployBtn.disabled = true;
-          centerDeployBtn.style.opacity = '0.4';
-          centerDeployBtn.style.cursor = 'not-allowed';
-          centerDeployBtn.textContent = 'DEPLOY IN 4.0s';
+          centerDeployBtn.textContent = 'WAIT 4.0s';
         }
 
         // Hide mid-respawn workshop screen until requested
@@ -1449,11 +1991,11 @@
         if (attacker === this.player) {
           this.updateHighScore(true);
           if (wasCarryingFlag) {
-            this.addFloatingPopup(`🎯 FLAG CARRIER DOWN! +${totalAward} PTS`, '#fbbf24');
+            this.addFloatingPopup(`FLAG CARRIER DOWN! +${totalAward} PTS`, '#d9822b');
           } else if (attacker.killStreak >= 2) {
-            this.addFloatingPopup(`🔥 ${attacker.killStreak}x KILL STREAK! +${totalAward} PTS`, '#00ff9d');
+            this.addFloatingPopup(`${attacker.killStreak}x KILL STREAK! +${totalAward} PTS`, '#52c468');
           } else {
-            this.addFloatingPopup(`💥 ENEMY SPLASHED! +${totalAward} PTS`, '#00ff9d');
+            this.addFloatingPopup(`ENEMY SPLASHED! +${totalAward} PTS`, '#52c468');
           }
         }
       }
@@ -1488,15 +2030,15 @@
 
       if (this.player && scoringTeam === this.player.team) {
         this.audio.playFlagFanfare(true);
-        this.addFloatingPopup(`🏆 ${scoringTeam} TEAM CAPTURED THE FLAG! (+${CONFIG.CTF.capturePoints})`, '#fbbf24');
+        this.addFloatingPopup(`${scoringTeam} TEAM CAPTURED THE FLAG (+${CONFIG.CTF.capturePoints} PTS)`, '#d9822b');
         if (this.cg) this.cg.happytime();
       } else {
         this.audio.playFlagFanfare(false);
-        this.addFloatingPopup(`⚠ ENEMY CAPTURED OUR FLAG!`, '#ff3b47');
+        this.addFloatingPopup(`ALERT: ENEMY CAPTURED OUR FLAG`, '#c9443e');
       }
 
       this.addFeedItem(
-        `🏆 ${scorerAc.callsign} CAPTURED the ${capturedFlagTeam} FLAG! (${this.teamCaptures.BLUE} - ${this.teamCaptures.RED})`,
+        `[CAPTURE] ${scorerAc.callsign} CAPTURED ${capturedFlagTeam} FLAG (${this.teamCaptures.BLUE} - ${this.teamCaptures.RED})`,
         'radio'
       );
 
@@ -1519,8 +2061,8 @@
         if (!this.isSuddenDeath) {
           this.isSuddenDeath = true;
           this.audio.playFlagFanfare(true);
-          this.addFloatingPopup('⚡ SUDDEN DEATH: GOLDEN CAP! NEXT CAPTURE WINS!', '#fbbf24');
-          this.addFeedItem('⚡ SUDDEN DEATH ENGAGED! Next team to capture a flag wins immediately!', 'warn');
+          this.addFloatingPopup('SUDDEN DEATH: GOLDEN CAP // NEXT CAPTURE WINS', '#d9822b');
+          this.addFeedItem('SUDDEN DEATH ENGAGED // Next team to capture a flag wins immediately!', 'warn');
         }
       }
     }
@@ -1539,11 +2081,15 @@
       document.getElementById('spectate-bar').classList.add('hidden');
       document.getElementById('respawn-center-overlay').classList.add('hidden');
       document.getElementById('respawn-hangar-screen').classList.add('hidden');
+      document.getElementById('feed-container').classList.add('hidden');
       if (this.studioVoid) this.studioVoid.visible = false;
-      document.getElementById('touch-controls').classList.add('hidden');
       this.inRespawnWorkshop = false;
       this.respawnAwaitingDeploy = false;
-      if (this.tutorial) this.tutorial.stop();
+      if (this.tutorial) {
+        this.tutorial.active = false;
+        this.tutorial.isFrozen = false;
+        if (this.tutorial.cardEl) this.tutorial.cardEl.classList.add('hidden');
+      }
 
       const resScreen = document.getElementById('results-screen');
       resScreen.classList.remove('hidden');
@@ -1552,19 +2098,19 @@
 
       if (winningTeam === 'DRAW') {
         document.getElementById('result-headline').textContent = 'ROUND DRAW';
-        document.getElementById('result-subline').textContent = timeReason || '10:00 TIME LIMIT REACHED';
+        document.getElementById('result-subline').textContent = timeReason || 'TIME LIMIT REACHED';
       } else {
-        document.getElementById('result-headline').textContent = `${winningTeam} SQUADRON VICTORY!`;
+        document.getElementById('result-headline').textContent = `${winningTeam} SQUADRON VICTORY`;
         if (this.isSuddenDeath) {
           document.getElementById('result-subline').textContent = playerWon
-            ? 'MISSION ACCOMPLISHED // SUDDEN DEATH GOLDEN CAPTURE SECURED!'
-            : 'DEFEAT // ENEMY SECURED SUDDEN DEATH GOLDEN CAP';
+            ? 'SUDDEN DEATH GOLDEN CAPTURE'
+            : 'DEFEAT — ENEMY GOLDEN CAPTURE';
         } else if (isTimeLimit) {
-          document.getElementById('result-subline').textContent = `${playerWon ? 'VICTORY' : 'DEFEAT'} // ${timeReason}`;
+          document.getElementById('result-subline').textContent = `${playerWon ? 'VICTORY' : 'DEFEAT'} — ${timeReason}`;
         } else {
           document.getElementById('result-subline').textContent = playerWon
-            ? 'MISSION ACCOMPLISHED // AIR SUPERIORITY & 3 FLAG CAPTURES SECURED'
-            : 'DEFEAT // ENEMY SQUADRON CAPTURED 3 FLAGS FIRST';
+            ? 'VICTORY — 3 FLAG CAPTURES SECURED'
+            : 'DEFEAT — ENEMY REACHED 3 CAPTURES';
         }
       }
       document.getElementById('result-team-standing').textContent =
@@ -1612,7 +2158,7 @@
       if (newRank.idx > prevRank.idx) {
         this.audio.playTone(587.33, 0.12, 'triangle', 0.22);
         setTimeout(() => this.audio.playTone(880, 0.35, 'triangle', 0.28), 120);
-        this.addFloatingPopup(`🎖 PROMOTED TO ${newRank.cur.name}!`, '#fbbf24');
+        this.addFloatingPopup(`PROMOTED // RANK: ${newRank.cur.name}`, '#d9822b');
       }
 
       // Populate Results Rewards UI
@@ -1623,8 +2169,8 @@
       const xpFillEl = document.getElementById('res-xp-fill');
 
       if (xpEarnedEl) xpEarnedEl.textContent = `+${totalXpEarned} XP`;
-      if (credEarnedEl) credEarnedEl.textContent = `+${totalCreditsEarned} ₵`;
-      if (rankNameEl) rankNameEl.textContent = `${newRank.cur.name} ${newRank.cur.badge}`;
+      if (credEarnedEl) credEarnedEl.textContent = `+${totalCreditsEarned} PTS`;
+      if (rankNameEl) rankNameEl.textContent = `${newRank.cur.icon || newRank.cur.badge} ${newRank.cur.name}`;
       if (rankXpEl) rankXpEl.textContent = `${this.career.xp.toLocaleString()} / ${newRank.next ? newRank.next.minXp.toLocaleString() : 'MAX'} XP`;
       if (xpFillEl) xpFillEl.style.width = `${Math.round(newRank.progress * 100)}%`;
 
@@ -1640,18 +2186,18 @@
         document.getElementById('res-best').textContent = this.career.stats.bestScore || this.player.score;
       }
 
-      this.populateScoreboard('results-table-body');
+      this.populateSplitScoreboard('results-blue-body', 'results-red-body', 'result-team-standing');
       this.initHangarUI();
     }
 
     getRandomTacticalTip() {
       const tips = [
-        '💡 DUAL-FLAG RULE: You can only capture when BOTH flags are at your home base (+1,000 PTS)!',
-        '💡 RECOVER TO SCORE: If your flag is stolen, hunt down the enemy carrier and touch your dropped flag to return it!',
-        '💡 CONVOY ESCORT: Stay close to your flag carrier and draw enemy fire away from them!',
-        '💡 SPEED MATTERS: Use Afterburner Boost [SHIFT] to pull away from pursuers when carrying the flag!',
-        '💡 HIGH-G DRIFT: Tap [S] to airbrake while rolling to pull rapid 180° snapshot turns on targets!',
-        '💡 TEAM SUPPORT: Your wingmen automatically form an escort convoy around you when you carry the flag!'
+        'DUAL-FLAG RULE: Both team flags must be secure at your home base to score a capture (+1,000 PTS).',
+        'RECOVER TO SCORE: If your flag is stolen, intercept the enemy carrier and fly through the dropped flag.',
+        'CONVOY ESCORT: Stay close to your flag carrier and draw hostile cannon fire away from them.',
+        'SPEED ADVANTAGE: Engage Afterburner Boost [SHIFT] to break away from interceptors while carrying the flag.',
+        'HIGH-G TURNS: Tap [S] to deploy airbrakes while rolling for rapid snapshot angles.',
+        'TEAM ESCORT: Wingmen automatically form an escort formation around you when carrying the flag.'
       ];
       return tips[Math.floor(Math.random() * tips.length)];
     }
@@ -1664,7 +2210,7 @@
       this.spectateTarget = living[nextIdx];
       const specLabel = document.getElementById('spectate-label');
       if (specLabel) {
-        const teamColor = this.spectateTarget.team === 'BLUE' ? '#38bdf8' : '#ff4757';
+        const teamColor = this.spectateTarget.team === 'BLUE' ? '#5e97d1' : '#c9443e';
         specLabel.innerHTML = `SPECTATING: <span style="color:${teamColor};font-weight:700;">${this.spectateTarget.callsign}</span> (${this.spectateTarget.stats.name || this.spectateTarget.typeId})`;
       }
     }
@@ -1687,49 +2233,44 @@
             respawnScoreEl.textContent = `BLUE ${this.teamCaptures.BLUE} — ${this.teamCaptures.RED} RED`;
           }
           if (respawnTimeEl) {
-            respawnTimeEl.textContent = `⏱ ${HUDRenderer.formatClock(this.remainingMatchSec)}`;
+            respawnTimeEl.textContent = HUDRenderer.formatClock(this.remainingMatchSec);
           }
 
           if (ac.respawnTimer > 0) {
             const tStr = Math.max(0, ac.respawnTimer).toFixed(1);
             const killerName = (this.killerAc && this.killerAc.alive)
               ? this.killerAc.callsign
-              : (this.killerAc ? this.killerAc.callsign : 'TERRAIN / IMPACT');
+              : (this.killerAc ? this.killerAc.callsign : 'TERRAIN IMPACT');
             if (specLabel && (!this.spectateTarget || this.spectateTarget === this.killerAc)) {
-              specLabel.textContent = `🎯 ELIMINATED BY: ${killerName} // CHASE CAM`;
+              specLabel.textContent = `${killerName} — CHASE CAM`;
             }
             if (specRespawnBtn) {
-              specRespawnBtn.textContent = `SPAWN IN ${tStr}s`;
+              specRespawnBtn.textContent = `SPAWN ${tStr}s`;
               specRespawnBtn.disabled = true;
               specRespawnBtn.style.opacity = '0.4';
               specRespawnBtn.style.cursor = 'not-allowed';
               specRespawnBtn.classList.remove('active');
             }
             if (centerTimer) {
-              centerTimer.textContent = `RESPAWNING IN ${tStr}s`;
+              centerTimer.textContent = `${tStr}s`;
             }
             if (centerDeployBtn) {
               centerDeployBtn.disabled = true;
-              centerDeployBtn.style.opacity = '0.4';
-              centerDeployBtn.style.cursor = 'not-allowed';
-              centerDeployBtn.textContent = `DEPLOY IN ${tStr}s`;
+              centerDeployBtn.textContent = `WAIT ${tStr}s`;
             }
             if (respawnLaunchBtn) {
               respawnLaunchBtn.disabled = true;
-              respawnLaunchBtn.style.opacity = '0.4';
-              respawnLaunchBtn.style.cursor = 'not-allowed';
-              respawnLaunchBtn.textContent = `DEPLOY IN ${tStr}s`;
+              respawnLaunchBtn.textContent = `WAIT ${tStr}s`;
             }
             if (respawnLaunchSub) {
-              respawnLaunchSub.textContent = `DEPLOY LOCK ENGAGED • WAIT ${tStr}s BEFORE COMBAT SORTIE`;
+              respawnLaunchSub.textContent = `RE-DEPLOY LOCK — ${tStr}s`;
             }
           } else {
-            // Timer has completed (<= 0)
             if (centerTimer) {
-              centerTimer.textContent = `READY FOR DEPLOYMENT`;
+              centerTimer.textContent = 'READY';
             }
             if (specRespawnBtn) {
-              specRespawnBtn.textContent = `▶ DEPLOY NOW`;
+              specRespawnBtn.textContent = 'DEPLOY';
               specRespawnBtn.disabled = false;
               specRespawnBtn.style.opacity = '1.0';
               specRespawnBtn.style.cursor = 'pointer';
@@ -1738,23 +2279,16 @@
             if (centerDeployBtn) {
               centerDeployBtn.classList.remove('hidden');
               centerDeployBtn.disabled = false;
-              centerDeployBtn.style.opacity = '1.0';
-              centerDeployBtn.style.cursor = 'pointer';
-              centerDeployBtn.textContent = `▶ DEPLOY NOW`;
+              centerDeployBtn.textContent = 'DEPLOY';
             }
             if (respawnLaunchBtn) {
               respawnLaunchBtn.disabled = false;
-              respawnLaunchBtn.style.opacity = '1.0';
-              respawnLaunchBtn.style.cursor = 'pointer';
-              respawnLaunchBtn.textContent = `▶ DEPLOY TO BATTLE`;
+              respawnLaunchBtn.textContent = 'DEPLOY';
             }
             if (respawnLaunchSub) {
-              respawnLaunchSub.textContent = `RE-DEPLOYING INTO ONGOING CTF SQUADRON MATCH`;
+              respawnLaunchSub.textContent = 'READY TO RE-ENTER SORTIE';
             }
 
-            // CRITICAL RULE:
-            // "during this the plane shouldn't respawn until the player clicks deploy(make sure the original 4 seconds are over)"
-            // If the player is in the workshop or awaiting manual deploy after opening workshop, wait for deploy click!
             if (!this.inRespawnWorkshop && !this.respawnAwaitingDeploy) {
               this.respawnPlayerWithSelectedAircraft();
             }
@@ -1773,39 +2307,41 @@
       this.respawnAwaitingDeploy = true;
       this.respawnPreviewJet = this.selectedAircraft || 'FALCON';
 
-      // Hide center tactical tip overlay & bottom spectate bar
       const centerOverlay = document.getElementById('respawn-center-overlay');
       if (centerOverlay) centerOverlay.classList.add('hidden');
       const specBar = document.getElementById('spectate-bar');
       if (specBar) specBar.classList.add('hidden');
+      const feedEl = document.getElementById('feed-container');
+      if (feedEl) feedEl.classList.add('hidden');
 
-      // Show full-screen hangar workshop screen
       const hangarScreen = document.getElementById('respawn-hangar-screen');
-      if (hangarScreen) {
-        hangarScreen.classList.remove('hidden', 'tab-upgrades-active', 'tab-paint-active');
-        hangarScreen.classList.add('tab-fighter-active');
-      }
-      document.querySelectorAll('.respawn-tab-btn').forEach(b => {
-        b.classList.toggle('active', b.dataset.tab === 'fighter');
-      });
+      if (hangarScreen) hangarScreen.classList.remove('hidden');
 
-      // 3D ISOLATION: Show ONLY the 3D plane illuminated in studio void (hide all other entities/hangar bay structure)
+      // 3D Isolation: show grounded stand + studio dark void inside respawn bay
+      this.world.setHangarLightingMode(true);
       if (this.studioVoid) this.studioVoid.visible = true;
       if (this.hangarBay) this.hangarBay.visible = true;
       if (this.hangarBayMeshes) this.hangarBayMeshes.forEach(m => m.visible = false);
-      this.updateRespawnPreviewMesh();
+      if (this.hangarStandMeshes) this.hangarStandMeshes.forEach(m => m.visible = true);
 
+      this.switchRespawnTab('fighter', false);
+      this.updateRespawnPreviewMesh();
       this.renderRespawnWorkshopUI();
     }
 
     closeRespawnWorkshop(toSpectate = true) {
+      this.clearHangarTestEffects(true);
       this.inRespawnWorkshop = false;
+      this.world.setHangarLightingMode(false);
       if (this.studioVoid) this.studioVoid.visible = false;
       if (this.hangarBay) this.hangarBay.visible = false;
       if (this.menuFighter) this.menuFighter.visible = false;
 
       const hangarScreen = document.getElementById('respawn-hangar-screen');
       if (hangarScreen) hangarScreen.classList.add('hidden');
+
+      const feedEl = document.getElementById('feed-container');
+      if (feedEl) feedEl.classList.remove('hidden');
 
       if (toSpectate) {
         const centerOverlay = document.getElementById('respawn-center-overlay');
@@ -1825,38 +2361,29 @@
     }
 
     updateRespawnPreviewMesh() {
-      if (this.menuFighter) {
-        this.scene.remove(this.menuFighter);
-        AircraftModelFactory.disposeObject3D(this.menuFighter);
-      }
       const previewJet = this.respawnPreviewJet || this.selectedAircraft || 'FALCON';
       const team = this.player ? this.player.team : this.selectedTeam;
-      this.menuFighter = AircraftModelFactory.createAircraftMesh(previewJet, this.selectedLivery, team);
-      this.menuFighter.position.set(0, 750, 0);
-      this.menuFighter.visible = true;
-      this.scene.add(this.menuFighter);
+      this._mountHangarAircraft(previewJet, team);
     }
 
     renderRespawnWorkshopUI() {
       const targetJet = this.respawnPreviewJet || this.selectedAircraft || 'FALCON';
       const baseDef = CONFIG.AIRCRAFT[targetJet] || CONFIG.AIRCRAFT.FALCON;
       const eff = CareerManager.getEffectiveAircraftStats(targetJet, this.career);
-      const isUnlocked = this.career.unlockedAircraft.includes(targetJet);
-      const isEquipped = (this.selectedAircraft === targetJet);
-      const unlockCost = baseDef.unlockCost !== undefined ? baseDef.unlockCost : (baseDef.cost || 0);
+      const compareEff = (targetJet !== this.selectedAircraft)
+        ? CareerManager.getEffectiveAircraftStats(this.selectedAircraft, this.career)
+        : null;
       const idx = CONFIG.AIRCRAFT_KEYS.indexOf(targetJet);
 
-      // 1. Credits & Live Match Telemetry
       const credEl = document.getElementById('respawn-hangar-credits-val');
       if (credEl) credEl.textContent = (this.career.credits || 0).toLocaleString();
       const matchScoreEl = document.getElementById('respawn-hangar-match-score');
       if (matchScoreEl) matchScoreEl.textContent = `BLUE ${this.teamCaptures.BLUE} — ${this.teamCaptures.RED} RED`;
       const timeBadgeEl = document.getElementById('respawn-hangar-time-badge');
-      if (timeBadgeEl) timeBadgeEl.textContent = `⏱ ${HUDRenderer.formatClock(this.remainingMatchSec)}`;
+      if (timeBadgeEl) timeBadgeEl.textContent = HUDRenderer.formatClock(this.remainingMatchSec);
 
-      // 2. Center Carousel Bar (Aircraft counter, name, role, action slot)
       const counterEl = document.getElementById('respawn-carousel-counter');
-      if (counterEl) counterEl.textContent = `AIRCRAFT ${idx + 1} OF ${CONFIG.AIRCRAFT_KEYS.length}`;
+      if (counterEl) counterEl.textContent = `0${idx + 1} / 0${CONFIG.AIRCRAFT_KEYS.length}`;
       const nameEl = document.getElementById('respawn-carousel-name');
       if (nameEl) nameEl.textContent = baseDef.name;
       const roleEl = document.getElementById('respawn-carousel-role');
@@ -1864,169 +2391,26 @@
       const upJetName = document.getElementById('respawn-upgrade-jet-name');
       if (upJetName) upJetName.textContent = (baseDef.shortName || baseDef.name).toUpperCase();
 
-      const actionSlot = document.getElementById('respawn-carousel-action-slot');
-      if (actionSlot) {
-        actionSlot.innerHTML = '';
-        if (isEquipped) {
-          actionSlot.innerHTML = `<span class="jet-status-badge equipped" style="background:rgba(0,255,157,0.15);border:1px solid #00ff9d;color:#00ff9d;padding:6px 16px;border-radius:4px;font-size:11px;font-weight:700;">✓ EQUIPPED FOR NEXT SPAWN</span>`;
-        } else if (isUnlocked) {
-          const btn = document.createElement('button');
-          btn.className = 'primary-btn btn-equip-action';
-          btn.style.cssText = 'font-size:12px;padding:7px 22px;background:#00ff9d;color:#040914;font-weight:800;border:none;border-radius:4px;cursor:pointer;';
-          btn.textContent = '✈ SELECT FOR RESPAWN';
-          btn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            this.selectedAircraft = targetJet;
-            this.career.selectedAircraft = targetJet;
-            CareerManager.save(this.career);
-            if (this.cg) this.cg.setData('fighterjets3d_aircraft', this.selectedAircraft);
-            this.audio.playTone(587.33, 0.1, 'triangle', 0.22);
-            this.addFloatingPopup(`✈ ${baseDef.name} SELECTED FOR RESPAWN!`, '#00ff9d');
-            this.updateRespawnPreviewMesh();
-            this.renderRespawnWorkshopUI();
-          });
-          actionSlot.appendChild(btn);
-        } else {
-          const btn = document.createElement('button');
-          btn.className = 'primary-btn btn-unlock-action';
-          btn.style.cssText = 'font-size:12px;padding:7px 22px;background:#fbbf24;color:#0f172a;font-weight:800;border:none;border-radius:4px;cursor:pointer;';
-          btn.textContent = `🔓 UNLOCK AIRFRAME (₵${unlockCost.toLocaleString()})`;
-          btn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            if (this.career.credits < unlockCost) {
-              this.addFloatingPopup(`NEED ₵${(unlockCost - this.career.credits).toLocaleString()} MORE CREDITS!`, '#ff3b47');
-              this.audio.playTone(220, 0.15, 'sawtooth', 0.2);
-              return;
-            }
-            this.career.credits -= unlockCost;
-            if (!this.career.unlockedAircraft.includes(targetJet)) {
-              this.career.unlockedAircraft.push(targetJet);
-            }
-            this.selectedAircraft = targetJet;
-            this.career.selectedAircraft = targetJet;
-            CareerManager.save(this.career);
-            if (this.cg) this.cg.setData('fighterjets3d_aircraft', this.selectedAircraft);
+      this.renderActionSlot('respawn-carousel-action-slot', targetJet, true);
+      this.renderTelemetryBars('respawn-telemetry-bars', null, targetJet, eff, compareEff);
+      this.renderFleetStrip('respawn-jet-pills', targetJet, (key) => {
+        this.respawnPreviewJet = key;
+        this.updateRespawnPreviewMesh();
+        this.renderRespawnWorkshopUI();
+      });
+      this.renderUpgradesTrack('respawn-upgrades-list', targetJet, () => this.renderRespawnWorkshopUI(), 'respawn-upgrade-preview');
 
-            this.audio.playTone(523.25, 0.1, 'triangle', 0.2);
-            setTimeout(() => this.audio.playTone(659.25, 0.12, 'triangle', 0.22), 80);
-            setTimeout(() => this.audio.playTone(783.99, 0.18, 'triangle', 0.25), 160);
-            this.addFloatingPopup(`✈ ${baseDef.name} UNLOCKED & EQUIPPED!`, '#00ff9d');
-            this.updateRespawnPreviewMesh();
-            this.renderRespawnWorkshopUI();
-          });
-          actionSlot.appendChild(btn);
-        }
-      }
-
-      // 3. Quick Jet Picker Pills
-      const pillRow = document.getElementById('respawn-jet-pills');
-      if (pillRow) {
-        pillRow.innerHTML = '';
-        CONFIG.AIRCRAFT_KEYS.forEach(key => {
-          const def = CONFIG.AIRCRAFT[key];
-          const unl = this.career.unlockedAircraft.includes(key);
-          const eqp = (this.selectedAircraft === key);
-          const act = (targetJet === key);
-          const pill = document.createElement('div');
-          pill.className = `jet-pill ${act ? 'active' : ''} ${eqp ? 'equipped-pill' : ''}`;
-          const icon = eqp ? '✓ ' : (!unl ? '🔒 ' : '');
-          pill.textContent = `${icon}${def.shortName || def.name}`;
-          pill.style.cursor = 'pointer';
-          pill.addEventListener('click', () => {
-            this.respawnPreviewJet = key;
-            this.updateRespawnPreviewMesh();
-            this.renderRespawnWorkshopUI();
-          });
-          pillRow.appendChild(pill);
-        });
-      }
-
-      // 4. Upgrades Compact List (Speed, Agility, Firepower, Armor, Boost)
-      const upContainer = document.getElementById('respawn-upgrades-list');
-      if (upContainer) {
-        upContainer.innerHTML = '';
-        const cats = ['speed', 'agility', 'firepower', 'armor', 'boost'];
-        const catLabels = {
-          speed: `Top Speed (${eff.maxSpeed} km/h)`,
-          agility: `Agility & Turn Authority (${eff.pitchRate}°/s)`,
-          firepower: `20mm Cannon Damage (${eff.cannonDamage} dmg)`,
-          armor: `Hull Armor (${eff.maxHp} HP)`,
-          boost: `Nitro Boost Capacity (${eff.boostMaxEnergy} fuel)`
-        };
-        if (!this.career.upgrades[targetJet]) {
-          this.career.upgrades[targetJet] = { speed: 1, agility: 1, firepower: 1, armor: 1, boost: 1 };
-        }
-        const curUps = this.career.upgrades[targetJet];
-
-        cats.forEach(cat => {
-          const curLvl = curUps[cat] || 1;
-          const nextCost = (curLvl < 5) ? CONFIG.UPGRADE_COSTS[curLvl] : 0;
-          const upDescObj = CONFIG.UPGRADE_DESCS[cat];
-          const desc = upDescObj ? `${upDescObj.name} • ${upDescObj.perk}` : '';
-
-          let dotsHtml = '';
-          for (let i = 1; i <= 5; i++) {
-            dotsHtml += `<span class="lvl-dot ${i <= curLvl ? 'filled' : ''}"></span>`;
-          }
-
-          let btnHtml = '';
-          if (curLvl < 5) {
-            const canAfford = this.career.credits >= nextCost;
-            btnHtml = `<button class="primary-btn btn-buy-upgrade" data-cat="${cat}" style="font-size:10px;padding:4px 10px;${canAfford ? 'background:#00ff9d;color:#040914;' : 'opacity:0.6;background:#64748b;color:#f8fafc;'}">UPGRADE (₵${nextCost})</button>`;
-          } else {
-            btnHtml = `<span style="font-size:10px;color:#00ff9d;font-weight:800;font-family:monospace;">MAX LEVEL</span>`;
-          }
-
-          const item = document.createElement('div');
-          item.className = 'upgrade-row-item';
-          item.innerHTML = `
-            <div class="upgrade-row-header">
-              <span class="upgrade-cat-name">${catLabels[cat]}</span>
-              <span style="font-size:10px;color:#38bdf8;font-family:monospace;">Lvl ${curLvl} / 5</span>
-            </div>
-            <div class="upgrade-cat-perk">${desc}</div>
-            <div class="upgrade-row-bottom">
-              <div class="upgrade-level-dots" style="flex:1;max-width:140px;">${dotsHtml}</div>
-              ${btnHtml}
-            </div>
-          `;
-
-          const buyBtn = item.querySelector('.btn-buy-upgrade');
-          if (buyBtn) {
-            buyBtn.addEventListener('click', (e) => {
-              e.stopPropagation();
-              if (curLvl >= 5) return;
-              if (this.career.credits < nextCost) {
-                this.addFloatingPopup(`NEED ₵${nextCost - this.career.credits} MORE CREDITS!`, '#ff3b47');
-                this.audio.playTone(220, 0.15, 'sawtooth', 0.2);
-                return;
-              }
-              this.career.credits -= nextCost;
-              this.career.upgrades[targetJet][cat] = curLvl + 1;
-              CareerManager.save(this.career);
-
-              this.audio.playTone(440, 0.08, 'triangle', 0.18);
-              setTimeout(() => this.audio.playTone(880, 0.15, 'triangle', 0.22), 70);
-              this.addFloatingPopup(`UPGRADE APPLIED: LEVEL ${curLvl + 1}!`, '#00ff9d');
-              this.renderRespawnWorkshopUI();
-            });
-          }
-
-          upContainer.appendChild(item);
-        });
-      }
-
-      // 5. Sync Livery & Tracer Swatches
+      // Sync Livery & Tracer Swatches
       document.querySelectorAll('#respawn-livery-group .livery-swatch').forEach(sw => {
-        const idx = parseInt(sw.dataset.livery, 10) || 0;
-        sw.classList.toggle('active', idx === this.selectedLivery);
+        const sIdx = parseInt(sw.dataset.livery, 10) || 0;
+        sw.classList.toggle('active', sIdx === this.selectedLivery);
       });
       document.querySelectorAll('#respawn-tracer-group .livery-swatch').forEach(sw => {
-        const idx = parseInt(sw.dataset.tracer, 10) || 0;
-        sw.classList.toggle('active', idx === this.selectedTracer);
+        const sIdx = parseInt(sw.dataset.tracer, 10) || 0;
+        sw.classList.toggle('active', sIdx === this.selectedTracer);
       });
 
-      // 6. Update Bottom Deploy Button
+      // Bottom Deploy Status
       const deployBtn = document.getElementById('btn-respawn-launch');
       const deploySub = document.getElementById('respawn-launch-subtitle');
       if (this.player) {
@@ -2034,19 +2418,15 @@
           const t = Math.max(0, this.player.respawnTimer).toFixed(1);
           if (deployBtn) {
             deployBtn.disabled = true;
-            deployBtn.style.opacity = '0.4';
-            deployBtn.style.cursor = 'not-allowed';
-            deployBtn.textContent = `DEPLOY IN ${t}s`;
+            deployBtn.textContent = `WAIT ${t}s`;
           }
-          if (deploySub) deploySub.textContent = `DEPLOY LOCK ENGAGED • WAIT ${t}s BEFORE COMBAT SORTIE`;
+          if (deploySub) deploySub.textContent = `RE-DEPLOY LOCK — ${t}s`;
         } else {
           if (deployBtn) {
             deployBtn.disabled = false;
-            deployBtn.style.opacity = '1.0';
-            deployBtn.style.cursor = 'pointer';
-            deployBtn.textContent = `▶ DEPLOY TO BATTLE`;
+            deployBtn.textContent = 'DEPLOY';
           }
-          if (deploySub) deploySub.textContent = `RE-DEPLOYING INTO ONGOING CTF SQUADRON MATCH`;
+          if (deploySub) deploySub.textContent = 'READY TO RE-ENTER SORTIE';
         }
       }
     }
@@ -2054,7 +2434,7 @@
     deployPlayerFromRespawn() {
       if (!this.player || this.player.alive) return;
       if (this.player.respawnTimer > 0) {
-        this.addFloatingPopup(`CANNOT DEPLOY YET: WAIT ${this.player.respawnTimer.toFixed(1)}s`, '#ff3b47');
+        this.addFloatingPopup(`CANNOT DEPLOY YET // WAIT ${this.player.respawnTimer.toFixed(1)}s`, '#c9443e');
         this.audio.playTone(220, 0.15, 'sawtooth', 0.2);
         return;
       }
@@ -2102,9 +2482,13 @@
         this.weapons.setPlayerTracerColor(CONFIG.TRACERS[this.selectedTracer].hex);
       }
 
-      // 3. Clear workshop flags and 3D studio void
+      // 3. Clear workshop flags and restore outdoor flight lighting
+      this.clearHangarTestEffects(true);
       this.inRespawnWorkshop = false;
       this.respawnAwaitingDeploy = false;
+      const feedEl = document.getElementById('feed-container');
+      if (feedEl) feedEl.classList.remove('hidden');
+      this.world.setHangarLightingMode(false);
       if (this.studioVoid) this.studioVoid.visible = false;
       if (this.hangarBay) this.hangarBay.visible = false;
       if (this.menuFighter) this.menuFighter.visible = false;
@@ -2125,41 +2509,116 @@
 
       // Audible deployment alert & feedback popup
       this.audio.playTone(523.25, 0.12, 'triangle', 0.25);
-      this.addFloatingPopup('✈ SORTIE DEPLOYED! AIRFRAME ENGAGED!', '#00ff9d');
+      this.addFloatingPopup('SORTIE DEPLOYED // AIRFRAME ENGAGED', '#52c468');
     }
 
-    populateScoreboard(tbodyId) {
-      const tbody = document.getElementById(tbodyId);
-      if (!tbody) return;
-      tbody.innerHTML = '';
-
-      const banner = document.getElementById('team-score-banner');
+    populateSplitScoreboard(blueTbodyId, redTbodyId, bannerId) {
+      const banner = document.getElementById(bannerId);
       if (banner) {
         const clk = HUDRenderer.formatClock(this.remainingMatchSec);
         banner.textContent = this.isSuddenDeath
-          ? `⚡ SUDDEN DEATH // BLUE ${this.teamCaptures.BLUE} — ${this.teamCaptures.RED} RED`
-          : `⏱ ${clk} // BLUE ${this.teamCaptures.BLUE} — ${this.teamCaptures.RED} RED`;
+          ? `SUDDEN DEATH  •  BLUE ${this.teamCaptures.BLUE} — ${this.teamCaptures.RED} RED`
+          : `BLUE ${this.teamCaptures.BLUE} — ${this.teamCaptures.RED} RED  •  ${clk}`;
       }
 
-      const sorted = [...this.aircraftList].sort((a, b) => b.score - a.score);
-      sorted.forEach((ac, idx) => {
-        const tr = document.createElement('tr');
-        tr.className = ac.isPlayer ? 'row-player' : (ac.team === 'BLUE' ? 'row-blue' : 'row-red');
-        const statusText = ac.carryingFlag ? '🚩 CARRYING FLAG' : (ac.alive ? 'IN FLIGHT' : 'RE-DEPLOYING');
-        const safeName = Game.escapeHtml(ac.callsign);
-        tr.innerHTML = `
-          <td>#${idx + 1}</td>
-          <td>${safeName}${ac.isPlayer ? ' (YOU)' : ''}</td>
-          <td style="font-weight:700;">${ac.team}</td>
-          <td>${ac.stats.name || ac.stats.shortName}</td>
-          <td style="color:#fbbf24;font-weight:700;">${ac.score}</td>
-          <td style="color:#00ff9d;font-weight:700;">${ac.flagCaptures}</td>
-          <td>${ac.flagReturns}</td>
-          <td>${ac.kills} / ${ac.deaths}</td>
-          <td class="${ac.alive ? 'status-alive' : 'status-down'}">${statusText}</td>
-        `;
-        tbody.appendChild(tr);
-      });
+      const renderTeamRows = (team, tbodyId) => {
+        const tbody = document.getElementById(tbodyId);
+        if (!tbody) return;
+        tbody.innerHTML = '';
+        const list = this.aircraftList
+          .filter(a => a.team === team)
+          .sort((a, b) => b.score - a.score);
+
+        list.forEach((ac, idx) => {
+          const tr = document.createElement('tr');
+          tr.className = ac.isPlayer ? 'row-player' : (team === 'BLUE' ? 'row-blue' : 'row-red');
+          const statusText = ac.carryingFlag ? 'CARRIER' : (ac.alive ? 'AIRBORNE' : 'DOWN');
+          const safeName = Game.escapeHtml(ac.callsign);
+          tr.innerHTML = `
+            <td>${idx + 1}</td>
+            <td>${safeName}${ac.isPlayer ? ' (YOU)' : ''}</td>
+            <td>${ac.stats.shortName || ac.stats.name}</td>
+            <td class="amber-text mono-strong">${ac.score}</td>
+            <td class="sage-text mono-strong">${ac.flagCaptures}/${ac.flagReturns}</td>
+            <td class="mono-dim">${ac.kills}/${ac.deaths}</td>
+            <td class="${ac.alive ? 'status-alive' : 'status-down'}">${statusText}</td>
+          `;
+          tbody.appendChild(tr);
+        });
+      };
+
+      renderTeamRows('BLUE', blueTbodyId);
+      renderTeamRows('RED', redTbodyId);
+    }
+
+    updateShowroomCamera(dt) {
+      const orb = this.showroomOrbit;
+      if (!orb) return;
+
+      const lerpAlpha = Math.min(1.0, 4.8 * dt);
+      if (!orb.isDragging) {
+        orb.targetAzimuth += dt * orb.autoSpinSpeed;
+        orb.azimuth += (orb.targetAzimuth - orb.azimuth) * lerpAlpha;
+        orb.elevation += (orb.targetElevation - orb.elevation) * lerpAlpha;
+      }
+      orb.dist += (orb.targetDist - orb.dist) * lerpAlpha;
+      orb.lookBiasX += (orb.targetLookBiasX - orb.lookBiasX) * lerpAlpha;
+
+      if (this.menuFighter) {
+        this.menuFighter.position.set(0, 748.0, 0);
+        this.menuFighter.rotation.set(0, 0, 0);
+        const ud = this.menuFighter.userData;
+        if (ud && ud.abGroup) {
+          if (this.hangarTestAB) {
+            ud.abGroup.visible = true;
+            const pulse = 1.85 + Math.sin(performance.now() * 0.045) * 0.22;
+            const scaleXY = 1.08 + Math.sin(performance.now() * 0.06) * 0.06;
+            if (Math.abs(ud.abGroup.position.z) > 0.1) {
+              ud.abGroup.scale.set(scaleXY, scaleXY, pulse);
+            } else {
+              for (let i = 0; i < ud.abGroup.children.length; i++) {
+                ud.abGroup.children[i].scale.set(scaleXY, scaleXY, pulse);
+              }
+            }
+          } else {
+            ud.abGroup.visible = false;
+          }
+        }
+      }
+
+      if (this.hangarTracerBullets && this.hangarTracerBullets.length > 0) {
+        for (let i = this.hangarTracerBullets.length - 1; i >= 0; i--) {
+          const b = this.hangarTracerBullets[i];
+          b.age += dt;
+          b.mesh.position.z -= 115 * dt;
+          if (b.age >= b.maxLife) {
+            this.scene.remove(b.mesh);
+            if (b.mat && b.mat.dispose) b.mat.dispose();
+            this.hangarTracerBullets.splice(i, 1);
+          }
+        }
+      }
+
+      const az = orb.azimuth;
+      const el = orb.elevation;
+      const dist = orb.dist;
+
+      const targetX = Math.cos(az) * orb.lookBiasX;
+      const targetY = 748.2;
+      const targetZ = -Math.sin(az) * orb.lookBiasX;
+
+      const camX = targetX + Math.sin(az) * Math.cos(el) * dist;
+      const camY = targetY + Math.sin(el) * dist + 1.1;
+      const camZ = targetZ + Math.cos(az) * Math.cos(el) * dist;
+
+      this.camera.position.set(camX, camY, camZ);
+      this.camera.up.set(0, 1, 0);
+      this.camera.lookAt(targetX, targetY, targetZ);
+
+      if (Math.abs(this.camera.fov - 48) > 0.1) {
+        this.camera.fov += (48 - this.camera.fov) * lerpAlpha;
+        this.camera.updateProjectionMatrix();
+      }
     }
 
     updateCamera(dt, focusAc, snapImmediate = false) {
@@ -2232,8 +2691,7 @@
       if (window.__syncViewportSize) window.__syncViewportSize();
       const w = Math.max(1, window.innerWidth || document.documentElement.clientWidth);
       const h = Math.max(1, window.innerHeight || document.documentElement.clientHeight);
-      const isPhone = Boolean(window.__detectPhone ? window.__detectPhone() : false);
-      this.input.isTouchDevice = isPhone;
+      this.input.isTouchDevice = false;
 
       this.renderer.setSize(w, h);
       this.camera.aspect = w / h;
@@ -2249,58 +2707,38 @@
       this.lastTime = now;
 
       if (this.state === 'MENU') {
-        if (this.input.consumePressed('Space') || this.input.consumePressed('Enter')) {
-          this.audio.init();
-          this.startMatch();
-          return;
+        const typingInput = document.activeElement && document.activeElement.tagName === 'INPUT';
+        const settingsModal = document.getElementById('settings-modal');
+        const settingsOpen = settingsModal && !settingsModal.classList.contains('hidden');
+
+        if (!typingInput && !settingsOpen) {
+          if (this.input.consumePressed('Space') || this.input.consumePressed('Enter')) {
+            this.audio.init();
+            this.audio.playUiTick('deploy');
+            this.startMatch();
+            return;
+          }
+          if (this.input.consumePressed('KeyA') || this.input.consumePressed('ArrowLeft')) {
+            const curIdx = CONFIG.AIRCRAFT_KEYS.indexOf(this.previewAircraft || this.selectedAircraft);
+            const newIdx = (curIdx - 1 + CONFIG.AIRCRAFT_KEYS.length) % CONFIG.AIRCRAFT_KEYS.length;
+            this.selectAirframe(CONFIG.AIRCRAFT_KEYS[newIdx]);
+          }
+          if (this.input.consumePressed('KeyD') || this.input.consumePressed('ArrowRight')) {
+            const curIdx = CONFIG.AIRCRAFT_KEYS.indexOf(this.previewAircraft || this.selectedAircraft);
+            const newIdx = (curIdx + 1) % CONFIG.AIRCRAFT_KEYS.length;
+            this.selectAirframe(CONFIG.AIRCRAFT_KEYS[newIdx]);
+          }
         }
-        if (this.input.consumePressed('KeyA') || this.input.consumePressed('ArrowLeft')) {
-          const curIdx = CONFIG.AIRCRAFT_KEYS.indexOf(this.previewAircraft || this.selectedAircraft);
-          const newIdx = (curIdx - 1 + CONFIG.AIRCRAFT_KEYS.length) % CONFIG.AIRCRAFT_KEYS.length;
-          this.selectAirframe(CONFIG.AIRCRAFT_KEYS[newIdx]);
-        }
-        if (this.input.consumePressed('KeyD') || this.input.consumePressed('ArrowRight')) {
-          const curIdx = CONFIG.AIRCRAFT_KEYS.indexOf(this.previewAircraft || this.selectedAircraft);
-          const newIdx = (curIdx + 1) % CONFIG.AIRCRAFT_KEYS.length;
-          this.selectAirframe(CONFIG.AIRCRAFT_KEYS[newIdx]);
+        if (this.input.consumePressed('Escape')) {
+          if (settingsOpen) settingsModal.classList.add('hidden');
+          const briefing = document.getElementById('hangar-briefing-drawer');
+          if (briefing) briefing.classList.add('hidden');
+          const bBtn = document.getElementById('btn-toggle-briefing');
+          if (bBtn) bBtn.classList.remove('active');
         }
         this.input.clearJustPressed();
-        const t = now * 0.00045;
-        // 3D Showroom Camera Orbit (Smooth Turntable + Mouse Drag)
-        if (this.showroomOrbit) {
-          if (!this.showroomOrbit.isDragging) {
-            this.showroomOrbit.azimuth += dt * this.showroomOrbit.autoSpinSpeed;
-          }
-          const az = this.showroomOrbit.azimuth;
-          const el = this.showroomOrbit.elevation;
-          const dist = this.showroomOrbit.dist;
 
-          if (this.menuFighter) {
-            this.menuFighter.rotation.set(
-              Math.sin(now * 0.0008) * 0.015,
-              0,
-              Math.sin(now * 0.0012) * 0.02
-            );
-          }
-
-          const camX = Math.sin(az) * Math.cos(el) * dist;
-          const camY = 750 + Math.sin(el) * dist + 1.2;
-          const camZ = Math.cos(az) * Math.cos(el) * dist;
-
-          this.camera.position.set(camX, camY, camZ);
-          this.camera.up.set(0, 1, 0);
-          this.camera.lookAt(0, 750.5, 0);
-        }
-        // Animate drifting tactical hangar dust specks
-        if (this.hangarDust) {
-          const posAttr = this.hangarDust.geometry.attributes.position;
-          const arr = posAttr.array;
-          for (let i = 0; i < arr.length; i += 3) {
-            arr[i + 1] += Math.sin(t * 2.0 + arr[i]) * 0.008;
-            arr[i] += Math.cos(t * 1.5 + arr[i + 2]) * 0.006;
-          }
-          posAttr.needsUpdate = true;
-        }
+        this.updateShowroomCamera(dt);
         this.world.update(this.camera.position, dt);
         this.renderer.render(this.scene, this.camera);
         return;
@@ -2336,6 +2774,32 @@
 
         if (this.tutorial && this.tutorial.active) {
           this.tutorial.update(dt, this.input, this.player);
+          if (this.tutorial.isFrozen) {
+            if (this.player && this.audio) {
+              this.audio.updateEngine(0.2, 0.2, false, true);
+            }
+            if (this.player) {
+              this.updateCamera(dt, this.player, false);
+            }
+            this.camera.updateMatrixWorld(true);
+            this.world.update(this.camera.position, 0);
+            this.hud.render(
+              0,
+              this.player,
+              this.aircraftList,
+              this.world,
+              this.camera,
+              false,
+              this.cameraMode,
+              this.input,
+              this.teamCaptures,
+              this.highScore,
+              this.remainingMatchSec,
+              this.isSuddenDeath
+            );
+            this.renderer.render(this.scene, this.camera);
+            return;
+          }
         }
 
         if (!this.isSuddenDeath) {
@@ -2346,8 +2810,8 @@
             if (this.remainingMatchSec <= warnSec && !this.timeAlertsTriggered[warnSec]) {
               this.timeAlertsTriggered[warnSec] = true;
               const lbl = warnSec >= 60 ? `${warnSec / 60} MINUTE${warnSec > 60 ? 'S' : ''}` : '30 SECONDS';
-              this.addFeedItem(`⏱ ${lbl} REMAINING IN CTF ROUND!`, 'warn');
-              this.addFloatingPopup(`⏱ ${lbl} REMAINING!`, '#fbbf24');
+              this.addFeedItem(`${lbl} REMAINING IN ROUND`, 'warn');
+              this.addFloatingPopup(`${lbl} REMAINING`, '#d9822b');
             }
           }
           if (this.remainingMatchSec <= 0) {
@@ -2387,7 +2851,7 @@
               this.world.dropFlag(this.player.carryingFlag, this, true);
             }
             if (playerControls.cycleTarget || !this.player.target || !this.player.target.alive) {
-              this.cyclePlayerTarget();
+              this.cyclePlayerTarget(playerControls.cycleTarget);
             }
             this.player.update(dt, playerControls, this.weapons, this.particles, this.camera.position, this.audio, this.aircraftList, this.world);
           } else if (playerControls.cycleTarget) {
@@ -2434,31 +2898,7 @@
         const activeFocus = this.player;
         if (activeFocus) {
           if (this.inRespawnWorkshop) {
-            // Mid-Respawn 3D Aircraft Showroom Camera (Smooth Turntable + Mouse Drag)
-            if (this.showroomOrbit) {
-              if (!this.showroomOrbit.isDragging) {
-                this.showroomOrbit.azimuth += dt * this.showroomOrbit.autoSpinSpeed;
-              }
-              const az = this.showroomOrbit.azimuth;
-              const el = this.showroomOrbit.elevation;
-              const dist = this.showroomOrbit.dist;
-
-              if (this.menuFighter) {
-                this.menuFighter.rotation.set(
-                  Math.sin(now * 0.0008) * 0.015,
-                  0,
-                  Math.sin(now * 0.0012) * 0.02
-                );
-              }
-
-              const camX = Math.sin(az) * Math.cos(el) * dist;
-              const camY = 750 + Math.sin(el) * dist + 1.2;
-              const camZ = Math.cos(az) * Math.cos(el) * dist;
-
-              this.camera.position.set(camX, camY, camZ);
-              this.camera.up.set(0, 1, 0);
-              this.camera.lookAt(0, 750.5, 0);
-            }
+            this.updateShowroomCamera(dt);
             this.camera.updateMatrixWorld(true);
             this.hud.clear();
             this.audio.updateEngine(0, 0, false, false);
@@ -2489,12 +2929,6 @@
               this.remainingMatchSec,
               this.isSuddenDeath
             );
-
-            const dropFlagBtn = document.getElementById('tbtn-drop-flag');
-            if (dropFlagBtn) {
-              const hasFlag = Boolean(this.player && this.player.carryingFlag);
-              dropFlagBtn.classList.toggle('hidden', !hasFlag);
-            }
 
             if (activeFocus.alive) {
               const speedRatio = activeFocus.flight.speed / activeFocus.stats.maxSpeed;

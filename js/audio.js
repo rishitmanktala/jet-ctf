@@ -465,6 +465,33 @@
       osc.start(now);
       osc.stop(now + duration + 0.01);
     }
+
+    playUiTick(kind = 'click') {
+      if (!this.initialized || this.isMuted()) return;
+      const presets = {
+        hover:       { freq: 1120, endFreq: 980,  dur: 0.018, vol: 0.032, type: 'sine' },
+        click:       { freq: 760,  endFreq: 520,  dur: 0.032, vol: 0.065, type: 'triangle' },
+        tab:         { freq: 920,  endFreq: 680,  dur: 0.038, vol: 0.06,  type: 'triangle' },
+        deploy:      { freq: 440,  endFreq: 660,  dur: 0.095, vol: 0.11,  type: 'triangle' },
+        lock:        { freq: 1320, endFreq: 1680, dur: 0.042, vol: 0.075, type: 'sine' },
+        dryfire:     { freq: 380,  endFreq: 140,  dur: 0.035, vol: 0.055, type: 'square' },
+        afterburner: { freq: 180,  endFreq: 310,  dur: 0.14,  vol: 0.075, type: 'triangle' },
+        error:       { freq: 240,  endFreq: 180,  dur: 0.09,  vol: 0.09,  type: 'sawtooth' }
+      };
+      const p = presets[kind] || presets.click;
+      const now = this.ctx.currentTime;
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+      osc.type = p.type;
+      osc.frequency.setValueAtTime(p.freq, now);
+      osc.frequency.exponentialRampToValueAtTime(p.endFreq, now + p.dur);
+      gain.gain.setValueAtTime(p.vol, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + p.dur);
+      osc.connect(gain);
+      gain.connect(this.sfxGain || this.masterGain);
+      osc.start(now);
+      osc.stop(now + p.dur + 0.008);
+    }
   }
 
 window.AudioEngine = AudioEngine;
