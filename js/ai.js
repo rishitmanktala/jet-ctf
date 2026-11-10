@@ -25,10 +25,11 @@
       this.humanAimDir = new THREE.Vector3(0, 0, -1);
       this.flankSide = (wingIndex % 2 === 0) ? 1 : -1;
 
-      // Keep all roam waypoints in the low/mid canyon action band!
+      // Dynamic 3D combat roaming across low, medium, and high altitudes (up to 6,500m)
+      const initAlt = 350 + Math.random() * 3200;
       this.roamWaypoint = new THREE.Vector3(
-        this.flankSide * (650 + Math.random() * 650),
-        220,
+        this.flankSide * (650 + Math.random() * 850),
+        initAlt,
         (Math.random() - 0.5) * 5500
       );
     }
@@ -135,7 +136,7 @@
 
     // Helper: compute direction from `pos` toward a 3D target point `dest`, sampling intervening terrain
     // so flight paths smoothly clear mountain ridges instead of aiming through them!
-    computeLevelInterceptDir(pos, destVec, minAlt = 145, maxAlt = 2400) {
+    computeLevelInterceptDir(pos, destVec, minAlt = 145, maxAlt = (CONFIG.WORLD && CONFIG.WORLD.maxAltitude) || 6500) {
       const targetX = destVec.x;
       const targetZ = destVec.z;
       const groundAtDest = Math.max(CONFIG.WORLD.seaLevel, this.worldRef ? this.worldRef.getTerrainHeight(targetX, targetZ) : 0);
@@ -267,7 +268,7 @@
           this.situationalState = 'CAPTURING_FLAG';
           _v2.copy(ownFlag.homePos);
           _v2.y = ownFlag.homePos.y + 16;
-          desiredDir = this.computeLevelInterceptDir(pos, _v2, 140, 600);
+          desiredDir = this.computeLevelInterceptDir(pos, _v2, 140);
         } else {
           // Dual-Flag holding pattern: Own flag is missing, so we cannot capture yet!
           this.situationalState = 'HOLDING_FLAG_WAIT_RECOVERY';
@@ -276,7 +277,7 @@
           const orbZ = ownFlag.homePos.z + Math.sin(orbitAng) * 650;
           const orbG = Math.max(CONFIG.WORLD.seaLevel, world.getTerrainHeight(orbX, orbZ));
           _v2.set(orbX, orbG + 160, orbZ);
-          desiredDir = this.computeLevelInterceptDir(pos, _v2, 160, 500);
+          desiredDir = this.computeLevelInterceptDir(pos, _v2, 160);
         }
 
         if (threat.tailChaser && distToHome > 800) {
@@ -302,7 +303,7 @@
         _v2.x += flankOffset;
         _v2.y += (this.wingIndex % 3 === 0) ? 35 : -15;
 
-        desiredDir = this.computeLevelInterceptDir(pos, _v2, 130, 600);
+        desiredDir = this.computeLevelInterceptDir(pos, _v2, 130);
         desiredThrottle = 1.0;
         wantBoost = (lead.dist > 450 || this.ac.timeSinceDamage < 2.0) && this.ac.boostEnergy > 12;
 
@@ -321,7 +322,7 @@
         this.situationalState = 'RETURN_FLAG';
         _v2.copy(ownFlag.pos);
         _v2.y = ownFlag.pos.y + 12;
-        desiredDir = this.computeLevelInterceptDir(pos, _v2, 140, 600);
+        desiredDir = this.computeLevelInterceptDir(pos, _v2, 140);
         desiredThrottle = 1.0;
         wantBoost = this.ac.boostEnergy > 15;
 
@@ -348,11 +349,11 @@
             _v3.normalize();
             _v4.copy(pos).addScaledVector(_v2, 1200).addScaledVector(_v3, 700);
             _v4.y = Math.max(CONFIG.WORLD.seaLevel, world.getTerrainHeight(_v4.x, _v4.z)) + 140;
-            desiredDir = this.computeLevelInterceptDir(pos, _v4, 150, 600);
+            desiredDir = this.computeLevelInterceptDir(pos, _v4, 150);
           } else {
             _v4.set(this.flankSide * 1100, 0, ownFlag.homePos.z * 0.6);
             _v4.y = Math.max(CONFIG.WORLD.seaLevel, world.getTerrainHeight(_v4.x, _v4.z)) + 140;
-            desiredDir = this.computeLevelInterceptDir(pos, _v4, 150, 600);
+            desiredDir = this.computeLevelInterceptDir(pos, _v4, 150);
           }
           this.stuntRollDir = this.evasiveJinkSign;
           desiredThrottle = 0.94;
@@ -370,26 +371,26 @@
               _v2.x += this.flankSide * 850;
               _v2.y = Math.max(CONFIG.WORLD.seaLevel, world.getTerrainHeight(_v2.x, _v2.z)) + 140;
             }
-            desiredDir = this.computeLevelInterceptDir(pos, _v2, 140, 600);
+            desiredDir = this.computeLevelInterceptDir(pos, _v2, 140);
             desiredThrottle = 0.94;
             wantBoost = distToEnemyFlag < 2200 && this.ac.boostEnergy > 20;
           } else if (sneakyVictim && distToEnemyFlag > 1400 && pos.distanceTo(sneakyVictim.mesh.position) < 2100) {
             this.situationalState = 'SNEAK_KILL';
             this.ac.target = sneakyVictim;
             const lead = WeaponsManager.computeLeadPosition(pos, vel, sneakyVictim.mesh.position, sneakyVictim.flight.velocity);
-            desiredDir = this.computeLevelInterceptDir(pos, lead.leadPos, 130, 600);
+            desiredDir = this.computeLevelInterceptDir(pos, lead.leadPos, 130);
             desiredThrottle = lead.dist > 800 ? 0.90 : 0.65;
             wantBoost = lead.dist > 1100 && this.ac.boostEnergy > 25;
           } else {
             this.situationalState = 'STALKING';
             if (pos.distanceTo(this.roamWaypoint) < 600) {
               this.flankSide = -this.flankSide;
-              const rwX = this.flankSide * (650 + Math.random() * 650);
+              const rwX = this.flankSide * (650 + Math.random() * 850);
               const rwZ = (Math.random() - 0.5) * 5500;
               const rwG = Math.max(CONFIG.WORLD.seaLevel, world.getTerrainHeight(rwX, rwZ));
-              this.roamWaypoint.set(rwX, rwG + 140 + Math.random() * 100, rwZ);
+              this.roamWaypoint.set(rwX, rwG + 180 + Math.random() * 3200, rwZ);
             }
-            desiredDir = this.computeLevelInterceptDir(pos, this.roamWaypoint, 150, 600);
+            desiredDir = this.computeLevelInterceptDir(pos, this.roamWaypoint, 150);
             desiredThrottle = 0.85;
           }
         }
@@ -407,7 +408,7 @@
             _v2.x += this.flankSide * 550;
             _v2.y = Math.max(CONFIG.WORLD.seaLevel, world.getTerrainHeight(_v2.x, _v2.z)) + 140;
           }
-          desiredDir = this.computeLevelInterceptDir(pos, _v2, 140, 600);
+          desiredDir = this.computeLevelInterceptDir(pos, _v2, 140);
           if (threat.tailChaser && distToFlag > 900) {
             this.stuntRollDir = this.evasiveJinkSign;
           }
@@ -417,13 +418,13 @@
           this.situationalState = 'HUNT_CARRIER';
           this.ac.target = ownFlag.carrier;
           const lead = WeaponsManager.computeLeadPosition(pos, vel, ownFlag.carrier.mesh.position, ownFlag.carrier.flight.velocity);
-          desiredDir = this.computeLevelInterceptDir(pos, lead.leadPos, 130, 600);
+          desiredDir = this.computeLevelInterceptDir(pos, lead.leadPos, 130);
           desiredThrottle = 0.92;
           wantBoost = lead.dist > 800 && this.ac.boostEnergy > 25;
         } else if (this.ac.target && this.ac.target.alive) {
           this.situationalState = 'CLEAR_BASE';
           const lead = WeaponsManager.computeLeadPosition(pos, vel, this.ac.target.mesh.position, this.ac.target.flight.velocity);
-          desiredDir = this.computeLevelInterceptDir(pos, lead.leadPos, 140, 600);
+          desiredDir = this.computeLevelInterceptDir(pos, lead.leadPos, 140);
           desiredThrottle = 0.80;
         }
 
@@ -435,7 +436,7 @@
           this.situationalState = 'RETURN_FLAG';
           _v2.copy(ownFlag.pos);
           _v2.y = ownFlag.pos.y + 12;
-          desiredDir = this.computeLevelInterceptDir(pos, _v2, 140, 600);
+          desiredDir = this.computeLevelInterceptDir(pos, _v2, 140);
           desiredThrottle = 0.92;
           wantBoost = this.ac.boostEnergy > 25;
         } else if (ownFlag && ownFlag.state === 'CARRIED' && ownFlag.carrier && ownFlag.carrier.alive) {
@@ -443,20 +444,20 @@
           const thief = ownFlag.carrier;
           this.ac.target = thief;
           const lead = WeaponsManager.computeLeadPosition(pos, vel, thief.mesh.position, thief.flight.velocity);
-          desiredDir = this.computeLevelInterceptDir(pos, lead.leadPos, 130, 600);
+          desiredDir = this.computeLevelInterceptDir(pos, lead.leadPos, 130);
           desiredThrottle = 0.92;
           wantBoost = lead.dist > 750 && this.ac.boostEnergy > 25;
         } else if (isClutchSituation && enemyFlag && enemyFlag.state !== 'CARRIED') {
           this.situationalState = 'CLUTCH_PUSH';
           _v2.copy(enemyFlag.pos);
           _v2.y = enemyFlag.pos.y + 14;
-          desiredDir = this.computeLevelInterceptDir(pos, _v2, 140, 600);
+          desiredDir = this.computeLevelInterceptDir(pos, _v2, 140);
           desiredThrottle = 0.90;
           wantBoost = this.ac.boostEnergy > 35;
         } else if (this.ac.target && this.ac.target.alive && this.ac.target.mesh.position.distanceTo(ownFlag.homePos) < 3400) {
           this.situationalState = 'DEFEND_BASE';
           const lead = WeaponsManager.computeLeadPosition(pos, vel, this.ac.target.mesh.position, this.ac.target.flight.velocity);
-          desiredDir = this.computeLevelInterceptDir(pos, lead.leadPos, 140, 600);
+          desiredDir = this.computeLevelInterceptDir(pos, lead.leadPos, 140);
           desiredThrottle = 0.82;
         } else {
           this.situationalState = 'GUARD_FLAG';
@@ -465,7 +466,7 @@
           const orbZ = ownFlag.homePos.z + Math.sin(orbitAng) * 650;
           const orbG = Math.max(CONFIG.WORLD.seaLevel, world.getTerrainHeight(orbX, orbZ));
           _v2.set(orbX, orbG + 130, orbZ);
-          desiredDir = this.computeLevelInterceptDir(pos, _v2, 180, 500);
+          desiredDir = this.computeLevelInterceptDir(pos, _v2, 180);
           desiredThrottle = 0.70;
         }
 
@@ -478,7 +479,7 @@
           const thief = ownFlag.carrier;
           this.ac.target = thief;
           const lead = WeaponsManager.computeLeadPosition(pos, vel, thief.mesh.position, thief.flight.velocity);
-          desiredDir = this.computeLevelInterceptDir(pos, lead.leadPos, 130, 600);
+          desiredDir = this.computeLevelInterceptDir(pos, lead.leadPos, 130);
           desiredThrottle = 1.0;
           wantBoost = lead.dist > 500 && this.ac.boostEnergy > 15;
           const toLead = _v3.subVectors(lead.leadPos, pos).normalize();
@@ -489,18 +490,18 @@
           this.situationalState = 'RETURN_FLAG';
           _v2.copy(ownFlag.pos);
           _v2.y = ownFlag.pos.y + 12;
-          desiredDir = this.computeLevelInterceptDir(pos, _v2, 140, 600);
+          desiredDir = this.computeLevelInterceptDir(pos, _v2, 140);
           desiredThrottle = 1.0;
           wantBoost = this.ac.boostEnergy > 20;
         } else if (this.ac.target && this.ac.target.alive) {
           this.situationalState = 'INTERCEPT';
           const lead = WeaponsManager.computeLeadPosition(pos, vel, this.ac.target.mesh.position, this.ac.target.flight.velocity);
-          desiredDir = this.computeLevelInterceptDir(pos, lead.leadPos, 140, 600);
+          desiredDir = this.computeLevelInterceptDir(pos, lead.leadPos, 140);
           desiredThrottle = 0.92;
           wantBoost = lead.dist > 600 && this.ac.boostEnergy > 20;
         } else {
           this.situationalState = 'PATROL_BASE';
-          desiredDir = this.computeLevelInterceptDir(pos, ownFlag.homePos, 160, 600);
+          desiredDir = this.computeLevelInterceptDir(pos, ownFlag.homePos, 160);
           desiredThrottle = 0.80;
         }
 
@@ -522,7 +523,7 @@
             this.situationalState = 'PEEL_THREAT';
             this.ac.target = carrierThreat;
             const lead = WeaponsManager.computeLeadPosition(pos, vel, carrierThreat.mesh.position, carrierThreat.flight.velocity);
-            desiredDir = this.computeLevelInterceptDir(pos, lead.leadPos, 140, 600);
+            desiredDir = this.computeLevelInterceptDir(pos, lead.leadPos, 140);
             const angleToTarget = forward.angleTo(desiredDir);
             desiredThrottle = (angleToTarget > 0.50) ? 0.35 : 0.88;
             wantBoost = lead.dist > 400 && angleToTarget < 0.50 && this.ac.boostEnergy > (isClutchSituation ? 8 : 18);
@@ -531,14 +532,14 @@
             const flankSign = (this.wingIndex % 2 === 0) ? 1 : -1;
             const distBehind = 140 + (this.wingIndex % 3) * 45;
             _v2.copy(friendlyCarrier.mesh.position).add(new THREE.Vector3(flankSign * (120 + (this.wingIndex % 3) * 35), 25, distBehind));
-            desiredDir = this.computeLevelInterceptDir(pos, _v2, 150, 600);
+            desiredDir = this.computeLevelInterceptDir(pos, _v2, 150);
             desiredThrottle = 0.88;
             wantBoost = pos.distanceTo(_v2) > 500 && this.ac.boostEnergy > 25;
           }
         } else if (this.ac.target && this.ac.target.alive) {
           this.situationalState = 'SUPPORT';
           const lead = WeaponsManager.computeLeadPosition(pos, vel, this.ac.target.mesh.position, this.ac.target.flight.velocity);
-          desiredDir = this.computeLevelInterceptDir(pos, lead.leadPos, 140, 600);
+          desiredDir = this.computeLevelInterceptDir(pos, lead.leadPos, 140);
           const angleToTarget = forward.angleTo(desiredDir);
           desiredThrottle = (angleToTarget > 0.50) ? 0.35 : ((lead.dist > 750) ? 0.92 : 0.78);
           wantBoost = lead.dist > 400 && angleToTarget < 0.50 && this.ac.boostEnergy > (isClutchSituation ? 8 : 18);
@@ -546,7 +547,7 @@
           this.situationalState = 'SWEEP';
           const swpG = Math.max(CONFIG.WORLD.seaLevel, world.getTerrainHeight(0, 0));
           _v2.set(0, swpG + 140, 0);
-          desiredDir = this.computeLevelInterceptDir(pos, _v2, 160, 600);
+          desiredDir = this.computeLevelInterceptDir(pos, _v2, 160);
           desiredThrottle = 0.74;
         }
       }
@@ -582,11 +583,12 @@
         desiredDir.lerp(_v4.normalize(), 0.65).normalize();
       }
 
-      // 5. Altitude Ceiling Governor: gently guide down only if drifting extremely high (> 2400m)
-      // and safely above all terrain!
-      if (pos.y > 2400 && pos.y - highestTerrainAhead > 400) {
-        const pullDownStrength = Math.min(0.35, (pos.y - 2400) / 1000);
-        desiredDir.y = Math.min(desiredDir.y, -pullDownStrength * 0.25);
+      // 5. Altitude Ceiling Governor: gently guide down only near the world ceiling (6,500m)
+      const maxWorldAlt = (CONFIG.WORLD && CONFIG.WORLD.maxAltitude) || 6500;
+      const botCeilingWarn = maxWorldAlt - 400;
+      if (pos.y > botCeilingWarn && pos.y - highestTerrainAhead > 400) {
+        const pullDownStrength = Math.min(0.40, (pos.y - botCeilingWarn) / 300);
+        desiredDir.y = Math.min(desiredDir.y, -pullDownStrength * 0.30);
         desiredDir.normalize();
       }
 

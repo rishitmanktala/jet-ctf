@@ -41,11 +41,11 @@
         }
       }
 
-      // 2. World Boundary Protection & Auto Turn-Back (No altitude limits!)
+      // 2. World Boundary Protection & Auto Turn-Back (6,500m Ceiling Limit)
       const pos = mesh.position;
       const horizDist = Math.sqrt(pos.x * pos.x + pos.z * pos.z);
-      this.outOfBoundsWarning = horizDist > CONFIG.WORLD.softBoundary;
-      this.autopilotOverride = horizDist > CONFIG.WORLD.hardBoundary;
+      this.outOfBoundsWarning = horizDist > CONFIG.WORLD.softBoundary || pos.y > CONFIG.WORLD.maxAltitude;
+      this.autopilotOverride = horizDist > CONFIG.WORLD.hardBoundary || pos.y > CONFIG.WORLD.maxAltitude + 350;
 
       // 3. Stall Check
       if (this.speed < phys.stallSpeed && !this.isBoosting) {
@@ -133,7 +133,8 @@
           // AI Bot or Autopilot Override Steering
           let targetDir = controls.mouseAimWorldDir;
           if (this.autopilotOverride) {
-            targetDir = _v1.set(-pos.x, 0, -pos.z).normalize();
+            const returnY = (pos.y > CONFIG.WORLD.maxAltitude) ? (CONFIG.WORLD.maxAltitude - 350 - pos.y) : 0;
+            targetDir = _v1.set(-pos.x, returnY, -pos.z).normalize();
           }
 
           const targetHeading = Math.atan2(-targetDir.x, -targetDir.z);
@@ -187,7 +188,8 @@
         let yawIn = controls.yaw;
 
         if (this.autopilotOverride) {
-          _v1.set(-pos.x, 0, -pos.z).normalize();
+          const returnY = (pos.y > CONFIG.WORLD.maxAltitude) ? (CONFIG.WORLD.maxAltitude - 350 - pos.y) : 0;
+          _v1.set(-pos.x, returnY, -pos.z).normalize();
           _q1.copy(mesh.quaternion).invert();
           _v2.copy(_v1).applyQuaternion(_q1);
           rollIn = Math.max(-1, Math.min(1, Math.atan2(_v2.x, _v2.y) * 2.2));
